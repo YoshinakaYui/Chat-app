@@ -13,7 +13,7 @@ services:
       - ./backend:/app
       - /app/tmp
     working_dir: /app
-    command: air
+    command: ["air", "-c", ".air.toml"]
     environment:
       DB_DSN: host=db user=user password=password dbname=chat_app_db port=5432 sslmode=disable
 
@@ -40,7 +40,7 @@ services:
     volumes:
       - chat_app_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user"]
+      test: ["CMD-SHELL", "pg_isready -d chat_app_db -U user"]
       interval: 10s
       timeout: 5s
       retries: 5
