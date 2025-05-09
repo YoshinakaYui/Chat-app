@@ -1,0 +1,33 @@
+root = "."
+# ビルドしたGoバイナリを格納する一時ディレクトリです。
+tmp_dir = "tmp"
+
+[build]
+    # cmp： ビルド時に実行されるコマンドを指定
+    # GOOS=linux：ターゲットOSをLinuxに設定
+    # GOARCH=and64：ターゲットアーキテクチャをamd64（64ビットCPU）に設定
+    # -o ./tmp/main：ビルド結果をtmp/mainに出力
+    # chmod +x ./tmp/main：ビルドしたバイナリに実行権限を付与
+    # .（ドット）：ビルド対象のソースコードが現在のディレクトリ
+    cmp = "GOOS=linux GOARCH=and64 -o ./tmp/main . && chmod +x ./tmp/main"
+    
+    # irがビルド後に実行するバイナリの場所を指定
+    # bin： 実行するGoバイナリのパス
+    bin = "tmp/main"
+    
+    # full_bin： 実行ファイルの完全パス
+    full_bin = "tmp/main"
+    
+    # 監視対象とするファイルの拡張子を指定
+    # 他の拡張子（HTMLやCSSなど）も監視対象になってしまうため、バックエンドのGoコードのみ監視したい場合に便利
+    
+    include_ext = ["go"]
+
+    # exclude_dir： Airが監視しないディレクトリを指定
+    # tmp ディレクトリはビルド結果を格納する一時フォルダであり、ホットリロード対象にすると無限ループが発生します。そのため、ビルド時に生成される tmp を監視対象外にしています
+    exclude_dir = ["tmp"]
+
+[log]
+    # time = true：ログ出力にタイムスタンプを付加
+    # ログがいつ記録されたかを確認できるため、エラーログの分析が容易
+    time = true
