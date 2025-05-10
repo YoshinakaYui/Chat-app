@@ -23,3 +23,6 @@ func Connect() error {
 	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	return err
 }
+
+
+// 12344
