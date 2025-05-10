@@ -25,7 +25,8 @@ services:
     command: ["air", "-c", ".air.toml"]
     # 環境変数としてデータベース接続情報を指定
     environment:
-      DB_DSN: host=db user=user password=password dbname=chat_app_db port=5432 sslmode=disable
+      # DB_DSN: host=db user=user password=password dbname=chat_app_db port=5432 sslmode=disable
+      DB_DSN: postgres://user:password@db:5432/chat_app_db?sslmode=disable
 
   # フロントエンドサービス
   frontend:
