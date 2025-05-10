@@ -1,19 +1,29 @@
+# バージョン指定
 version: '3.8'
 
+# 各コンテナ(サービス)の定義
 services:
   # バックエンドサービス
   backend:
+    # ./backendフォルダ内のDockerfileからイメージをビルド
     build: ./backend
+    # データベース（db）サービスが正常に動作しているか確認(順序確認が目的)
     depends_on:
       db:
+        # データベースが正常に起動するのを確認してからバックエンドを起動(より安全)
         condition: service_healthy
+    # ホストの8080ポートとコンテナの8080ポートをマッピング
     ports:
       - "8080:8080"
+    # ホットリロードのためのマウントを指定
     volumes:
       - ./backend:/app
       - /app/tmp
+
     working_dir: /app
+    # airを使って自動リロード（ホットリロード）を実現
     command: ["air", "-c", ".air.toml"]
+    # 環境変数としてデータベース接続情報を指定
     environment:
       DB_DSN: host=db user=user password=password dbname=chat_app_db port=5432 sslmode=disable
 
@@ -30,6 +40,7 @@ services:
   # データベースサービス
   db:
     image: postgres:15
+    # 自動再起動
     restart: always
     environment:
       POSTGRES_DB: chat_app_db
