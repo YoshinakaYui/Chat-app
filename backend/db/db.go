@@ -13,7 +13,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var DB *gorm.DBz
+var DB *gorm.DB
 
 // データベースとmain.goをつなげる関数
 func Connect() error {
@@ -38,7 +38,7 @@ func Connect() error {
         return fmt.Errorf("データベースPing失敗: %v", err)
     }
 
-	log.Println("DB接続成功！sssss")
+	log.Println("DB接続成功！")
 	return nil
 }
 
@@ -80,3 +80,48 @@ func SaveUser(username, password string) error {
     return nil
 }
 
+// 
+
+// return
+//  false: login NG
+//  true: login ok
+// func isLogin(username, password string) bool {
+
+//     // select count(*) from users where username = username and password = password;
+
+//     var count int
+
+//     return !(count == 0);
+// }
+// ハッシュ化して、確認
+
+
+type User struct {
+    ID           uint   `gorm:"primaryKey"`
+    Username     string `gorm:"unique"`
+    PasswordHash string
+}
+
+// ログインチェック関数
+func IsLogin(username, password string) bool {
+    log.Println("login.go！");
+    var user User
+
+    // ユーザー名で検索
+    result := DB.Where("username = ?", username).First(&user)
+    if result.Error != nil {
+        log.Println("ユーザーが見つかりません:", result.Error)
+        return false
+    }
+    log.Println("login.go！AA");
+
+	// パスワードを比較
+	err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
+	if err != nil {
+		log.Println("パスワードが一致しません:", err)
+		return false
+	}
+
+	log.Println("ログイン成功:", username)
+    return true
+}
