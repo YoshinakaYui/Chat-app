@@ -1,127 +1,125 @@
-// SQLとバックエンドを接続するコード(データベース接続を管理するGoコード)
 package db
 
-// ORMライブラリ：SQLを書かずにデータの構造体を変更
 import (
-	"gorm.io/driver/postgres"
-	//"gorm.io/gorm/logger"
-	"gorm.io/gorm"
-	"os" // 環境変数を扱うための標準ライブラリ 
-	"log"
 	"fmt"
+	"log"
+	"os"
 	"time"
+
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 var DB *gorm.DB
 
-// データベースとmain.goをつなげる関数
+// データベース接続
 func Connect() error {
-	// 環境変数から接続情報を接続情報を取得
-	// os.Getenvは関数であり、環境変数の値を取得するために使う // os.Genenvで"DB_DSN"の環境変数の値を取得して、dsnに代入する
 	dsn := os.Getenv("DB_DSN")
-	// error型の変数を宣言
 	var err error
-
-	// GORMを使ってPostgreSQLに接続
 	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	return err
-
-    // SQL DBオブジェクトを取得
-    sqlDB, err := DB.DB()
-    if err != nil {
-        return fmt.Errorf("GORMからSQL DBオブジェクト取得失敗: %v", err)
-    }
-
-    // Pingを実施して接続確認
-    if err := sqlDB.Ping(); err != nil {
-        return fmt.Errorf("データベースPing失敗: %v", err)
-    }
-
-	log.Println("DB接続成功！")
+	if err != nil {
+		return fmt.Errorf("データベース接続エラー: %v", err)
+	}
+	log.Println("データベース接続成功")
 	return nil
 }
 
-// パスワードをハッシュ化する関数
-func hashPassword(password string) (string, error) {
-    hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-    if err != nil {
-        return "", fmt.Errorf("パスワードのハッシュ化に失敗: %w", err)
-    }
-    return string(hashed), nil
-}
-
-// ユーザーをデータベースに保存する関数
-func SaveUser(username, password string) error {
-    // パスワードをハッシュ化
-    hashedPassword, err := hashPassword(password)
-    if err != nil {
-        log.Println("パスワードハッシュエラー:", err)
-        return err
-    }
-
-    jst, err := time.LoadLocation("Asia/Tokyo")
-    if err != nil {
-        panic("タイムゾーンの取得に失敗しました")
-    }
-
-    // 現在日時を日本時間で取得
-    now := time.Now().In(jst)
-	log.Println(now)
-
-    query := "INSERT INTO users (username, password_hash, created_at, updated_at) VALUES ($1, $2, $3, $4)"
-    result := DB.Exec(query, username, hashedPassword, now, now)
-    if result.Error != nil {
-        log.Println("データ保存エラー:", err)
-        return fmt.Errorf("データ保存エラー")
-    }
-
-    log.Println("ユーザー情報が保存されました")
-    return nil
-}
-
-// 
-
-// return
-//  false: login NG
-//  true: login ok
-// func isLogin(username, password string) bool {
-
-//     // select count(*) from users where username = username and password = password;
-
-//     var count int
-
-//     return !(count == 0);
-// }
-// ハッシュ化して、確認
-
-
 type User struct {
-    ID           uint   `gorm:"primaryKey"`
-    Username     string `gorm:"unique"`
-    PasswordHash string
+	ID           uint   `gorm:"primaryKey" json:"id"`
+	Username     string `gorm:"unique" json:"username"`
+	PasswordHash string `json:"-"`
 }
 
-// ログインチェック関数
-func IsLogin(username, password string) bool {
-    log.Println("login.go！");
-    var user User
+// メッセージ情報の構造体
+type Message struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Sender    string    `json:"sender"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+}
 
-    // ユーザー名で検索
-    result := DB.Where("username = ?", username).First(&user)
-    if result.Error != nil {
-        log.Println("ユーザーが見つかりません:", result.Error)
-        return false
-    }
-    log.Println("login.go！AA");
-
-	// パスワードを比較
-	err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
+// ハッシュ化したパスワードを生成
+func hashPassword(password string) (string, error) {
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		log.Println("パスワードが一致しません:", err)
+		return "", fmt.Errorf("パスワードハッシュ化失敗: %v", err)
+	}
+	return string(hashed), nil
+}
+
+// ハッシュ化パスワードと入力パスワードを比較する関数
+func CheckPasswordHash(password, hash string) bool {
+	// bcrypt.CompareHashAndPasswordで比較
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	return err == nil
+}
+
+// ユーザーを保存
+func SaveUser(username, password string) error {
+	hashedPassword, err := hashPassword(password)
+	if err != nil {
+		return err
+	}
+
+	user := User{Username: username, PasswordHash: hashedPassword}
+	result := DB.Create(&user)
+	return result.Error
+}
+
+// ログインチェック（int型にする）
+func IsLogin(username, password string) bool {
+	log.Println("islogin-1")
+	var user User
+	result := DB.Where("username = ?", username).First(&user)
+	if result.Error != nil {
 		return false
 	}
 
-	log.Println("ログイン成功:", username)
-    return true
+	log.Println("islogin-2")
+	//ハッシュ化されたパスワードと入力されたパスワードを比較し、一致していればnil（成功）、一致していなければエラー
+	err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
+	if err == nil {
+		return false
+	}
+
+	log.Println("islogin-3")
+	log.Println(user)
+	return true
+}
+
+// メッセージをデータベースに保存
+func SaveMessage(sender, content string) error {
+	message := Message{
+		Sender:    sender,
+		Content:   content,
+		CreatedAt: time.Now(),
+	}
+	result := DB.Create(&message)
+	if result.Error != nil {
+		return fmt.Errorf("メッセージ保存エラー: %v", result.Error)
+	}
+	return nil
+}
+
+// 全ユーザーを取得
+func GetAllUsers() ([]User, error) {
+	var users []User
+	result := DB.Select("id", "username").Find(&users)
+	if result.Error != nil {
+		return nil, fmt.Errorf("ユーザー取得失敗: %v", result.Error)
+	}
+	return users, nil
+}
+
+// すべてのメッセージを取得
+func GetAllMessages() ([]Message, error) {
+	var messages []Message
+	result := DB.Order("created_at asc").Find(&messages)
+	if result.Error != nil {
+		log.Println("メッセージ取得エラー:", result.Error)
+		return nil, fmt.Errorf("メッセージ取得エラー: %v", result.Error)
+	}
+	log.Println("メッセージ一覧取得成功:", messages)
+	return messages, nil
 }
