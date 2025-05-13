@@ -48,45 +48,45 @@ func hashPassword(password string) (string, error) {
 	return string(hashed), nil
 }
 
-// ハッシュ化パスワードと入力パスワードを比較する関数
-func CheckPasswordHash(password, hash string) bool {
-	// bcrypt.CompareHashAndPasswordで比較
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
-	return err == nil
-}
+// // ハッシュ化パスワードと入力パスワードを比較する関数
+// func CheckPasswordHash(password, hash string) bool {
+// 	// bcrypt.CompareHashAndPasswordで比較
+// 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+// 	return err == nil
+// }
 
-// ユーザーを保存
-func SaveUser(username, password string) error {
-	hashedPassword, err := hashPassword(password)
-	if err != nil {
-		return err
-	}
+// // ユーザーを保存
+// func SaveUser(username, password string) error {
+// 	hashedPassword, err := hashPassword(password)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	user := User{Username: username, PasswordHash: hashedPassword}
-	result := DB.Create(&user)
-	return result.Error
-}
+// 	user := User{Username: username, PasswordHash: hashedPassword}
+// 	result := DB.Create(&user)
+// 	return result.Error
+// }
 
-// ログインチェック（int型にする）
-func IsLogin(username, password string) bool {
-	log.Println("islogin-1")
-	var user User
-	result := DB.Where("username = ?", username).First(&user)
-	if result.Error != nil {
-		return false
-	}
+// // ログインチェック（int型にする）
+// func IsLogin(username, password string) bool {
+// 	log.Println("islogin-1")
+// 	var user User
+// 	result := DB.Where("username = ?", username).First(&user)
+// 	if result.Error != nil {
+// 		return false
+// 	}
 
-	log.Println("islogin-2")
-	//ハッシュ化されたパスワードと入力されたパスワードを比較し、一致していればnil（成功）、一致していなければエラー
-	err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
-	if err == nil {
-		return false
-	}
+// 	log.Println("islogin-2")
+// 	//ハッシュ化されたパスワードと入力されたパスワードを比較し、一致していればnil（成功）、一致していなければエラー
+// 	err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
+// 	if err == nil {
+// 		return false
+// 	}
 
-	log.Println("islogin-3")
-	log.Println(user)
-	return true
-}
+// 	log.Println("islogin-3")
+// 	log.Println(user)
+// 	return true
+// }
 
 // メッセージをデータベースに保存
 func SaveMessage(sender, content string) error {
