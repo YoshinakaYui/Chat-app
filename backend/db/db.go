@@ -4,12 +4,18 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"time"
+
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+// usersテーブルの構造体
+type Users struct {
+	Username     string `json:"username"`
+	PasswordHash string `json:"password_hash"`
+}
 
 var DB *gorm.DB
 
@@ -23,20 +29,15 @@ func Connect() error {
 	}
 	log.Println("データベース接続成功")
 	return nil
+
 }
 
-type User struct {
-	ID           uint   `gorm:"primaryKey" json:"id"`
-	Username     string `gorm:"unique" json:"username"`
-	PasswordHash string `json:"-"`
-}
+// ハッシュ化パスワードと入力パスワードを比較する関数
+func CheckPasswordHash(password, hash string) bool {
+	// bcrypt.CompareHashAndPasswordで比較
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	return err == nil
 
-// メッセージ情報の構造体
-type Message struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Sender    string    `json:"sender"`
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"created_at"`
 }
 
 // ハッシュ化したパスワードを生成
@@ -46,10 +47,13 @@ func hashPassword(password string) (string, error) {
 		return "", fmt.Errorf("パスワードハッシュ化失敗: %v", err)
 	}
 	return string(hashed), nil
+
 }
 
 // ユーザーを保存
 func SaveUser(username, password string) error {
+
+
 	hashedPassword, err := hashPassword(password)
 	if err != nil {
 		return err
@@ -104,6 +108,8 @@ func GetAllMessages() ([]Message, error) {
 		log.Println("メッセージ取得エラー:", result.Error)
 		return nil, fmt.Errorf("メッセージ取得エラー: %v", result.Error)
 	}
+
 	log.Println("メッセージ一覧取得成功:", messages)
 	return messages, nil
 }
+*/

@@ -1,8 +1,10 @@
 package main
 
 import (
+
 	"backend/db" // データベース接続を管理する自作パッケージ
 	"encoding/json"
+
 	"log"
 	"net/http" // HTTPサーバーを作成・操作するライブラリ
 )
@@ -158,29 +160,6 @@ func postMessageHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("メッセージ送信成功"))
 }
 
-// メッセージ一覧を取得するハンドラー
-// func getMessagesHandler(w http.ResponseWriter, r *http.Request) {
-// 	enableCORS(w)
-
-// 	if r.Method == "OPTIONS" {
-// 		w.WriteHeader(http.StatusOK)
-// 		return
-// 	}
-
-// 	if r.Method != http.MethodGet {
-// 		http.Error(w, "メソッドが許可されていません", http.StatusMethodNotAllowed)
-// 		return
-// 	}
-
-// 	messages, err := db.GetAllMessages()
-// 	if err != nil {
-// 		http.Error(w, "メッセージ一覧の取得に失敗しました", http.StatusInternalServerError)
-// 		return
-// 	}
-
-// 	w.Header().Set("Content-Type", "application/json")
-// 	json.NewEncoder(w).Encode(messages)
-// }
 
 // メイン関数：サーバーを起動する
 func main() {
@@ -190,12 +169,13 @@ func main() {
 		log.Println("DB接続成功")
 	}
 
-	http.HandleFunc("/", handler)
-	http.HandleFunc("/signup", addUserHandler)
-	http.HandleFunc("/login", loginHandler)
-	http.HandleFunc("/message", getRegisteredUsersHandler)
-	//http.HandleFunc("/message", postMessageHandler)
+
+	http.HandleFunc("/", handlers.Handler)
+	http.HandleFunc("/signup", handlers.AddUserHandler)
+	http.HandleFunc("/login", handlers.LoginHandler)
+	http.HandleFunc("/messages", handlers.MessageHandler)
 
 	log.Println("サーバー起動中 http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
+
 }
