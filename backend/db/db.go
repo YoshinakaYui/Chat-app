@@ -12,6 +12,7 @@ import (
 
 // usersテーブルの構造体
 type Users struct {
+	ID           uint   `gorm:"primaryKey" json:"id"`
 	Username     string `json:"username"`
 	PasswordHash string `json:"password_hash"`
 }
@@ -39,14 +40,14 @@ func CheckPasswordHash(password, hash string) bool {
 
 // ユーザーを保存
 func SaveUser(username, password string) error {
-	log.Println("11111", password)
+	log.Println("db-11111", password)
 	// パスワードをハッシュ化
 	hashedPassword, err := HashPassword(password)
 	if err != nil {
 		return fmt.Errorf("パスワードハッシュ化エラー: %v", err)
 	}
 
-	log.Println("22222")
+	log.Println("db-22222")
 	// ハッシュ化成功時にユーザーを保存（仮にDBに保存する処理とする）
 	user := Users{Username: username, PasswordHash: hashedPassword}
 	result := DB.Create(&user)
@@ -68,45 +69,32 @@ func HashPassword(password string) (string, error) {
 	return string(hashed), nil
 }
 
-// 	log.Println("islogin-3")
-// 	log.Println(user)
-// 	return true
-// }
-
-// メッセージをデータベースに保存
-// func SaveMessage(sender, content string) error {
-// 	message := Message{
-// 		Sender:    sender,
-// 		Content:   content,
-// 		CreatedAt: time.Now(),
-// 	}
-// 	result := DB.Create(&message)
-// 	if result.Error != nil {
-// 		return fmt.Errorf("メッセージ保存エラー: %v", result.Error)
-// 	}
-// 	return nil
-// }
-
-// 全ユーザーを取得
-// func GetAllUsers() ([]User, error) {
-// 	var users []User
-// 	result := DB.Select("id", "username").Find(&users)
-// 	if result.Error != nil {
-// 		return nil, fmt.Errorf("ユーザー取得失敗: %v", result.Error)
-// 	}
-// 	return users, nil
-// }
-
-/*
-// すべてのメッセージを取得
-func GetAllMessages() ([]Message, error) {
-	var messages []Message
-	result := DB.Order("created_at asc").Find(&messages)
-	if result.Error != nil {
-		log.Println("メッセージ取得エラー:", result.Error)
-		return nil, fmt.Errorf("メッセージ取得エラー: %v", result.Error)
-	}
-	log.Println("メッセージ一覧取得成功:", messages)
-	return messages, nil
+// メッセージ画面の色々な取得
+type Message struct {
+	ID         uint `gorm:"primaryKey"`
+	Sender     string
+	Content    string
+	MessagesID uint
 }
-*/
+
+func SaveMessage(sender, content string, messagesID uint) error {
+	message := Message{Sender: sender, Content: content, MessagesID: messagesID}
+	return DB.Create(&message).Error
+}
+
+func GetMessagesByRecipient(messagesID string) ([]Message, error) {
+	var messages []Message
+	result := DB.Where("messages = ?", messagesID).Find(&messages)
+	return messages, result.Error
+}
+
+// 全ユーザーを取得する関数
+func GetAllUsers() ([]Users, error) {
+	var users []Users
+	result := DB.Select("id", "username").Find(&users)
+	if result.Error != nil {
+		log.Println("ユーザー一覧取得エラー:", result.Error)
+		return nil, fmt.Errorf("ユーザー一覧取得エラー: %v", result.Error)
+	}
+	return users, nil
+}
