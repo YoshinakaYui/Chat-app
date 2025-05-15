@@ -23,8 +23,8 @@ func main() {
 	http.HandleFunc("/", handlers.Handler)
 	http.HandleFunc("/signup", handlers.AddUserHandler)
 	http.HandleFunc("/login", handlers.LoginHandler)
-	http.HandleFunc("/chat-room", handlers.GetUsersHandler)
-	http.HandleFunc("/messages", handlers.MessageHandler)
+	http.HandleFunc("/roomSelect", handlers.GetUsersHandler)
+	http.HandleFunc("/chat", handlers.MessageHandler)
 
 	log.Println("サーバー起動中 http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
