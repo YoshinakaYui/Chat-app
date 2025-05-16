@@ -3,10 +3,8 @@ package main
 import (
 	"backend/db" // データベース接続を管理する自作パッケージ
 	//"backend/handlers"
+	//backend/handlers"
 	"backend/handlers"
-	//"backend/handlers"
-
-	//"backend/handlers"
 
 	"log"
 	"net/http" // HTTPサーバーを作成・操作するライブラリ
@@ -21,10 +19,16 @@ func main() {
 	}
 
 	http.HandleFunc("/", handlers.Handler)
+
 	http.HandleFunc("/signup", handlers.AddUserHandler)
 	http.HandleFunc("/login", handlers.LoginHandler)
+
 	http.HandleFunc("/roomSelect", handlers.GetUsersHandler)
-	http.HandleFunc("/chat", handlers.MessageHandler)
+	http.HandleFunc("/createRooms", handlers.CreateChatRoom)
+
+	http.HandleFunc("/getRooms", handlers.CreateChatRoom)
+	http.HandleFunc("/getRoomMessages", handlers.MessageHandler)
+	http.HandleFunc("/message", handlers.MessageHandler)
 
 	log.Println("サーバー起動中 http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))

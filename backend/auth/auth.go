@@ -10,7 +10,7 @@ import (
 // 環境変数からJWT秘密鍵を取得
 var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 
-// トークン生成関数　ログイン成功時　ローカルストレージやクッキーに保存　→ loginHandler
+// トークン生成関数
 func GenerateJWT(username string, passwordHash string) (string, error) {
 	claims := jwt.MapClaims{
 		"username":     username,
@@ -22,7 +22,7 @@ func GenerateJWT(username string, passwordHash string) (string, error) {
 	return token.SignedString(jwtSecret)
 }
 
-// トークン検証関数　リクエストが来たときに検証　// messages.goで使われているが、使われていない
+// トークン検証関数　リクエストが来たときに検証
 func ValidateJWT(tokenString string) (string, string, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
