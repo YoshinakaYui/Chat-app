@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
+
+	_ "github.com/lib/pq"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
@@ -15,6 +18,31 @@ type Users struct {
 	ID           uint   `gorm:"primaryKey" json:"id"`
 	Username     string `json:"username"`
 	PasswordHash string `json:"password_hash"`
+}
+
+type ChatRoom struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	RoomName  string    `json:"room_name"`
+	IsGroup   int       `json:"is_group"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type RoomNumber struct {
+	ID       int `gorm:"primaryKey"`
+	RoomID   int `json:"room_id"` // チャットルームのID
+	UserID   int `json:"user_id"` // 参加ユーザーのID
+	JoinedAt time.Time
+}
+
+type Message struct {
+	ID           int       `gorm:"primaryKey"`
+	RoomID       int       `gorm:"not null;index"`
+	SenderID     int       `gorm:"not null;index"`
+	Content      string    `gorm:"type:text"`
+	CreatedAt    time.Time `gorm:"autoCreateTime"`
+	UpdatedAt    time.Time `gorm:"autoUpdateTime"`
+	ThreadRootID int       `gorm:"index"` // 親メッセージID（スレッド）
 }
 
 var DB *gorm.DB
@@ -70,23 +98,17 @@ func HashPassword(password string) (string, error) {
 }
 
 // メッセージ画面の色々な取得
-type Message struct {
-	ID         uint `gorm:"primaryKey"`
-	Sender     string
-	Content    string
-	MessagesID uint
-}
 
-func SaveMessage(sender, content string, messagesID uint) error {
-	message := Message{Sender: sender, Content: content, MessagesID: messagesID}
-	return DB.Create(&message).Error
-}
+// func SaveMessage(sender, content string, messagesID uint) error {
+// 	message := Message{Sender: sender, Content: content, MessagesID: messagesID}
+// 	return DB.Create(&message).Error
+// }
 
-func GetMessagesByRecipient(messagesID string) ([]Message, error) {
-	var messages []Message
-	result := DB.Where("messages = ?", messagesID).Find(&messages)
-	return messages, result.Error
-}
+// func GetMessagesByRecipient(messagesID string) ([]Message, error) {
+// 	var messages []Message
+// 	result := DB.Where("messages = ?", messagesID).Find(&messages)
+// 	return messages, result.Error
+// }
 
 // 全ユーザーを取得する関数
 func GetAllUsers() ([]Users, error) {
@@ -98,3 +120,42 @@ func GetAllUsers() ([]Users, error) {
 	}
 	return users, nil
 }
+
+// データベース初期化
+// func InitDB() {
+// 	var err error
+
+// 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+// 		os.Getenv("DB_HOST"),
+// 		os.Getenv("DB_PORT"),
+// 		os.Getenv("DB_USER"),
+// 		os.Getenv("DB_PASSWORD"),
+// 		os.Getenv("DB_NAME"),
+// 	)
+
+// 	DB, err = sql.Open("postgres", connStr)
+// 	if err != nil {
+// 		log.Fatalf("データベース接続エラー: %v", err)
+// 	}
+
+// 	if err = DB.Ping(); err != nil {
+// 		log.Fatalf("データベース接続確認エラー: %v", err)
+// 	}
+
+// 	log.Println("データベース接続成功")
+// }
+
+// メッセージ保存関数
+// func SaveMessages(sender, content string, recipientID int) error {
+// 	message := Message{
+// 		Sender:      sender,
+// 		Content:     content,
+// 		RecipientID: recipientID,
+// 		CreatedAt:   time.Now(),
+// 	}
+// 	result := DB.Create(&message)
+// 	if result.Error != nil {
+// 		return fmt.Errorf("メッセージ保存エラー: %v", result.Error)
+// 	}
+// 	return nil
+// }
