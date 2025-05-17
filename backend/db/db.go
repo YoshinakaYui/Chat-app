@@ -21,14 +21,14 @@ type Users struct {
 }
 
 type ChatRoom struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
+	ID        int       `gorm:"primaryKey" json:"id"`
 	RoomName  string    `json:"room_name"`
 	IsGroup   int       `json:"is_group"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-type RoomNumber struct {
+type RoomMember struct {
 	ID       int `gorm:"primaryKey"`
 	RoomID   int `json:"room_id"` // チャットルームのID
 	UserID   int `json:"user_id"` // 参加ユーザーのID
