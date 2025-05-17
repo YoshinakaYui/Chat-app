@@ -3,8 +3,8 @@ package main
 import (
 	"backend/db" // データベース接続を管理する自作パッケージ
 	//"backend/handlers"
-	//backend/handlers"
 	"backend/handlers"
+	//"backend/handlers"
 
 	"log"
 	"net/http" // HTTPサーバーを作成・操作するライブラリ

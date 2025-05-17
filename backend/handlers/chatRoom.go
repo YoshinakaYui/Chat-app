@@ -2,7 +2,8 @@ package handlers
 
 import (
 	"backend/db"
-	"backend/models"
+	//"backend/handlers"
+	//"backend/handlers"
 	"backend/utils"
 	"encoding/json"
 	"log"
@@ -51,36 +52,35 @@ func CreateChatRoom(w http.ResponseWriter, r *http.Request) {
 
 	// room_membersテーブルから既存ルームを検索//room_membersとchat_roomsを繋げた上で、セレクトをかける
 	// 🔴SQL文でroom_membersとchat_roomsを繋げる
-	var roomIDs []int
-	err := db.DB.Table("room_members").
-		Select("room_id").
-		Where("user_id IN (?, ?)", userIDs[0], userIDs[1]).
-		Group("room_id").
-		Having("COUNT(DISTINCT user_id) = 2").
-		Pluck("room_id", &roomIDs).Error
-
-	if err == nil && len(roomIDs) > 0 {
+	var existroom *db.ChatRoom = nil
+	existroom = GetRoomMembersByUsers(userIDs[0], userIDs[1])
+	if existroom != nil {
 		// 既存のルームが見つかった場合
-		var existingRoom models.TsChatRoom
-		err := db.DB.Where("id = ?", roomIDs[0]).First(&existingRoom).Error
-		if err == nil {
-			log.Println("既存ルームID:", existingRoom.ID)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":  "success",
-				"message": "既存のチャットルームを取得しました",
-				"roomId":  existingRoom.ID,
-			})
-			return
-		}
+		log.Println("既存ルームID:", existroom.ID)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "success",
+			"message": "既存のチャットルームを取得しました",
+			"roomId":  existroom.ID,
+		})
+		return
 	}
 
+	// 見つからなかった
+
 	// 新規チャットルーム作成
-	room := models.TsChatRoom{
+	// room := models.TsChatRoom{
+	// 	RoomName:  "", // チャットルーム名は空欄
+	// 	IsGroup:   0,
+	// 	CreatedAt: time.Now(),
+	// 	UpdatedAt: time.Now(),
+	// }
+	room := db.ChatRoom{
 		RoomName:  "", // チャットルーム名は空欄
 		IsGroup:   0,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
+
 	if err := db.DB.Create(&room).Error; err != nil {
 		log.Println("chat_rooms作成エラー：", err)
 		http.Error(w, "チャットルーム作成失敗", http.StatusInternalServerError)
@@ -88,7 +88,7 @@ func CreateChatRoom(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// メンバー登録
-	members := []models.TsRoomMember{
+	members := []db.RoomMember{
 		{RoomID: room.ID, UserID: req.User1ID, JoinedAt: time.Now()},
 		{RoomID: room.ID, UserID: req.User2ID, JoinedAt: time.Now()},
 	}

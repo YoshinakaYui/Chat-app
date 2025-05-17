@@ -90,16 +90,83 @@ func handleGetMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Println("⚫︎msg-33")
-	var messages []db.Message
-	// データベースからメッセージを取得（作成日時順にソート）
-	if err := db.DB.Where("room_id = ?", roomID).Order("created_at ASC").Find(&messages).Error; err != nil {
-		http.Error(w, "メッセージ取得失敗", http.StatusInternalServerError)
+
+	// メッセージを格納するスライス
+	var SendMessages []struct {
+		MessageID  int    `json:"message_id"`
+		Content    string `json:"content"`
+		CreatedAt  string `json:"created_at"`
+		SenderID   int    `json:"sender_id"`
+		SenderName string `json:"sender_name"`
+	}
+
+	// GORMでSQLクエリを構築（Link形式）
+	result := db.DB.Table("messages AS m").
+		Select("m.id AS message_id, m.content, m.created_at, m.sender_id, u.username AS sender_name").
+		Joins("JOIN users AS u ON m.sender_id = u.id").
+		Where("m.room_id = ?", roomID).
+		Find(&SendMessages)
+
+		// エラー処理
+	if result.Error != nil {
+		log.Println("メッセージ取得エラー:", result.Error)
+		http.Error(w, "メッセージが見つかりません", http.StatusNotFound)
 		return
 	}
+
 	log.Println("⚫︎msg-44")
 	// JSONレスポンス
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":   "success",
-		"messages": messages,
+		"messages": SendMessages,
 	})
+}
+
+// ルームメンバー取得処理（LEFT JOINを使用）
+func GetRoomMembersByUsers(user1ID int, user2ID int) *db.ChatRoom {
+	// utils.EnableCORS(w)
+	// log.Println("⚫︎msg-55")
+	// // クエリパラメータからroom_idを取得
+	// roomIDStr := r.URL.Query().Get("room_id")
+	// if roomIDStr == "" {
+	// 	http.Error(w, "ルームIDが必要です", http.StatusBadRequest)
+	// 	return
+	// }
+	// log.Println("⚫︎msg-66")
+	// roomID, err := strconv.Atoi(roomIDStr)
+	// if err != nil {
+	// 	http.Error(w, "ルームIDが不正です", http.StatusBadRequest)
+	// 	return
+	// }
+	// log.Println("⚫︎msg-77")
+	// var members []struct {
+	// 	RoomID   int    `json:"room_id"`
+	// 	RoomName string `json:"room_name"`
+	// 	IsGroup  int    `json:"is_group"`
+	// 	UserID   *int   `json:"user_id"` // NULL対応
+	// }
+
+	// LEFT JOINでルームとメンバーを取得
+	// GORMのLink形式を使ってクエリを組み立て
+	var chatroom db.ChatRoom
+
+	result := db.DB.Table("chat_rooms AS cr").
+		Select("cr.*").
+		Joins(`JOIN (
+                SELECT rm1.room_id
+                FROM room_members AS rm1
+                JOIN room_members AS rm2 ON rm1.room_id = rm2.room_id
+                WHERE rm1.user_id = ? 
+                  AND rm2.user_id = ? 
+                  AND rm1.user_id <> rm2.user_id
+            ) AS common_rooms ON cr.id = common_rooms.room_id`, user1ID, user2ID).
+		Where("cr.is_group = ?", 0).
+		First(&chatroom)
+
+	if result.Error != nil {
+		log.Println("チャットルームが見つかりません:", result.Error)
+		return nil
+	}
+
+	return &chatroom
 }
