@@ -20,13 +20,24 @@ const ChatRoom = () => {
   const [loggedInUserid, setLoggedInUserid] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null); // Refを使用
+  const [groupName, setGroupName] = useState<string | null>(null);
 
-  const GroupName = localStorage.getItem("roomName");
+  //console.log(localStorage)
 
   // メッセージ送信
   useEffect(() => {
     const fetchMessages = async () => {
       try {
+            // クライアントサイドでのみ実行するためのチェック
+          console.log("🟢",localStorage)
+          if (typeof window !== "undefined") {
+            const storedRoomName = localStorage.getItem("roomName");
+            if (storedRoomName) {
+              setGroupName(storedRoomName);
+            } else {
+              console.warn("ルーム名が見つかりません");
+            }
+          }
         const res = await fetch(`http://localhost:8080/getRoomMessages?room_id=${roomId}`);
         if (!res.ok) {
           throw new Error(`HTTPエラー: ${res.status}`);
@@ -115,16 +126,24 @@ const ChatRoom = () => {
       return;
     }
 
-    const formData = new FormData();
-    formData.append("file", selectedFile);
+    /*
+    roomid: parseInt(roomId as string, 10),
+    senderid: parseInt(loggedInUserid || "0", 10),
+    */
 
+    console.log(loggedInUserid);
+
+    const formData = new FormData();
+    formData.append("file",selectedFile);
+    formData.append("senderID",String(loggedInUserid));
+    formData.append("roomID",String(roomId));
 
     try {
       const response = await fetch("http://localhost:8080/sendFile", {
         method: "POST",
         body: formData,
         headers: {
-          // Content-Typeを指定しない → formDataが勝手に解釈してくれるから、不要
+          // Content-Typeを指定しない → formDataが勝手に解釈してくれる
         },
       });
 
@@ -165,7 +184,7 @@ const ChatRoom = () => {
         maxWidth: "1000px",
         textAlign: "center"
       }}>
-        <h2 style={{ color: "#388e3c", marginBottom: "15px" }}>ルーム：{GroupName}</h2>
+        <h2 style={{ color: "#388e3c", marginBottom: "15px" }}>ルーム：{groupName ? groupName : "ルーム名がありません"}</h2>
         <div style={{ maxHeight: "500px", overflowY: "auto", marginBottom: "15px" }}>
           {messages.length > 0 ? (
             messages.map((msg, index) => (

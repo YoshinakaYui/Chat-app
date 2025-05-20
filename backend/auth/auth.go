@@ -22,7 +22,7 @@ func GenerateJWT(username string, passwordHash string) (string, error) {
 	return token.SignedString(jwtSecret)
 }
 
-// トークン検証関数　リクエストが来たときに検証
+// トークン検証関数　リクエストが来たときに検証　（使ってない）
 func ValidateJWT(tokenString string) (string, string, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
