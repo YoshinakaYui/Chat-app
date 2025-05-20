@@ -21,7 +21,6 @@ interface Room {
   id: number;
   room_name: string;
 }
-
 interface Member {
   room_id: number;
   room_name: string;
@@ -36,14 +35,25 @@ export default function RoomSelect() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isPersonalModalOpen, setIsPersonalModalOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
+  const [personals, setPersonals] = useState<Room[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
   const router = useRouter();
 
-  const openModal = () => setIsModalOpen(true);
+  const openModal = () => {
+    setSelectedUsers([]);
+    setIsModalOpen(true);
+  }
   const closeModal = () => setIsModalOpen(false);
+
+  const openPersonalModal = () => {
+    setSelectedUsers([]);
+    setIsPersonalModalOpen(true);
+  }
+    const closePersonalModal = () => setIsPersonalModalOpen(false);
 
   //グループルーム作成
   const handleCreateGroup = async () => {
@@ -77,6 +87,39 @@ export default function RoomSelect() {
     }
   };
 
+  //個別ルーム
+  const handleCreatePersonal = async () => {
+    console.log("🟢",selectedUsers,loggedInUserID);
+    if (selectedUsers.length != 1) {
+      alert("メンバーを選択してください");
+      return;
+    }
+    try {
+      const res = await fetch("http://localhost:8080/createRooms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ room_name: groupName, user_ids: selectedUsers, login_id: loggedInUserID})
+      });
+      if (!res.ok) {
+        const errorMessage = await res.text();  // エラーメッセージを取得
+        throw new Error(`エラー: ${errorMessage}`);
+      } 
+      closePersonalModal();
+      alert("ルームを作成しました");
+      window.location.href = location.pathname;
+    } catch (err) {
+      if (err instanceof Error) {
+        console.error("エラー:", err.message);
+        alert(`${err.message}`);
+      } else {
+        console.error("未知のエラー:", err);
+        alert(`サーバーエラー: ${String(err)}`);
+      }
+    }
+  };
+
+
+
   // ユーザー選択をトグルする関数
   const toggleUserSelection = (userId: number) => {
     setSelectedUsers((prevSelected) =>
@@ -88,6 +131,7 @@ export default function RoomSelect() {
 
   // ログインしているか確認
   useEffect(() => {
+    console.log(localStorage);
     const loggedInUsername = localStorage.getItem("loggedInUser");
     const loggedInUserIDStr = localStorage.getItem("loggedInUserID");
     if (loggedInUsername && loggedInUserIDStr) {
@@ -137,7 +181,47 @@ export default function RoomSelect() {
     fetchUsers();
   }, []);
 
-  // 所属しているグループルーム一覧の取得
+  // 所属している個別ルーム一覧の取得
+  useEffect(() => {
+    const fetchPersonalRooms = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        if (!token) {
+          alert("ログインされていません");
+          router.push("/top");
+          return;
+        }
+
+        const loggedUsername = localStorage.getItem("loggedInUser");
+        const loggedIDStr = localStorage.getItem("loggedInUserID");
+    
+        var aaa = loggedIDStr !== null ? parseInt(loggedIDStr) : null 
+
+        const res = await fetch("http://localhost:8080/PersonalRoomSelect", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
+          body: JSON.stringify({ login_id: loggedIDStr !== null ? parseInt(loggedIDStr) : null })
+        });
+
+        if (!res.ok) {
+          throw new Error("ルーム一覧取得失敗");
+        }
+
+        const data = await res.json();
+        console.log("🟣Personal：",data)
+        if (Array.isArray(data)) {
+          setPersonals(data);
+        }
+      } catch (err) {
+        console.error("ルーム一覧取得エラー：", err);
+      }
+    };
+    fetchPersonalRooms();
+  }, []);
+
   useEffect(() => {
     const fetchRooms = async () => {
       try {
@@ -177,6 +261,7 @@ export default function RoomSelect() {
     };
     fetchRooms();
   }, []);
+
 
   
   // ユーザーを選択して個別ルームへ
@@ -279,13 +364,32 @@ export default function RoomSelect() {
         }}>
           <h2 style={{ color: "#388e3c", fontWeight: "bold", marginBottom: "15px" }}>チャットルーム選択</h2>
           <p style={{ color: "#555", marginBottom: "25px", fontSize: "16px" }}>ログイン中: {loggedInUser}</p>
-          <div style={{ display: "flex", gap: "20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+            {/* 個別チャット */}
             <div style={{ flex: 5 }}>
-              <h3 style={{ color: "#388e3c", marginBottom: "10px", textAlign: "center" }}>個別ルーム</h3>
-              {users.map((user) => (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                <div style={{ flex: 1 }}></div>
+                  <h3 style={{ color: "#388e3c", marginBottom: "0px", textAlign: "center",flex: 1 }}>個別ルーム</h3>
+                  <button onClick={openPersonalModal} style={{ padding: "8px 16px", margin: "10px", backgroundColor: "#388e3c", color: "#fff", borderRadius: "20px" }}>＋ユーザーを追加</button>
+                  {isPersonalModalOpen && (
+                      <div style={{ fontSize: "18px",position: "fixed", top: "20%", left: "50%", transform: "translate(-50%, -20%)", backgroundColor: "#fff", padding: "20px", borderRadius: "10px", boxShadow: "0 4px 8px rgba(0,0,0,0.2)", width: "40%",
+                        maxWidth: "400px" }}>
+                        <h3>ルーム作成</h3>
+                        {users.map((user) => (
+                          <div key={user.id } style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", marginBottom: "8px" }}>
+                            <input type="checkbox" style={{ marginRight: "20px", marginLeft:"50px" }} checked={selectedUsers.includes(user.id)} onChange={() => toggleUserSelection(user.id)} />
+                            {user.username}
+                          </div>
+                        ))}
+                        <button onClick={handleCreatePersonal} style={{ padding: "8px 16px", margin: "10px", backgroundColor: "#388e3c", color: "#fff", borderRadius: "20px" }}>作成</button>
+                        <button onClick={closePersonalModal} style={{ padding: "8px 16px", margin: "10px", backgroundColor: "#388e3c", color: "#fff", borderRadius: "20px" }}>キャンセル</button>
+                      </div>
+                  )}
+              </div>
+              {personals.map((personal) => (
                 <div
-                  key={user.id}
-                  onClick={() => handleSelectUser(user)}
+                  key={personal.id}
+                  onClick={() => handleSelectRoom(personal)}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -295,37 +399,38 @@ export default function RoomSelect() {
                     width: "100%",
                     maxWidth: "800px",
                     cursor: "pointer",
-                    backgroundColor: selectedUser?.id === user.id ? "#c8e6c9" : "#ffffff",
+                    backgroundColor: selectedUser?.id === personal.id ? "#c8e6c9" : "#ffffff",
                     borderRadius: "30px",
                     boxShadow: "0 5px 4px rgba(0, 0, 0, 0.1)",
                     transition: "all 0.3s",
                   }}
                 >
                   <div style={{ backgroundColor: "#81c784", width: "10px", height: "10px", borderRadius: "50%", marginRight: "10px" }}></div>
-                  <span style={{ color: "#333", fontSize: "18px", textAlign: "left" }}>{user.username}</span>
+                  <span style={{ color: "#333", fontSize: "18px", textAlign: "left" }}>{personal.room_name}</span>
                 </div>
               ))}
             </div>
+            {/* グループチャット */}
             <div style={{ flex: 5 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
                 <div style={{ flex: 1 }}></div>
-                <h3 style={{ color: "#388e3c", marginBottom: "0px", textAlign: "center",flex: 1 }}>グループルーム</h3>
-                <button onClick={openModal} style={{ padding: "8px 16px", margin: "10px", backgroundColor: "#388e3c", color: "#fff", borderRadius: "20px" }}>＋グループ作成</button>
-                {isModalOpen && (
-                  <div style={{ fontSize: "18px",position: "fixed", top: "20%", left: "50%", transform: "translate(-50%, -20%)", backgroundColor: "#fff", padding: "20px", borderRadius: "10px", boxShadow: "0 4px 8px rgba(0,0,0,0.2)", width: "40%",
-                    maxWidth: "400px" }}>
-                    <h3>グループ作成</h3>
-                    <input type="text" placeholder="グループ名" value={groupName} onChange={(e) => setGroupName(e.target.value)} />
-                    {users.map((user) => (
-                      <div key={user.id } style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", marginBottom: "8px" }}>
-                        <input type="checkbox" style={{ marginRight: "20px", marginLeft:"50px" }} checked={selectedUsers.includes(user.id)} onChange={() => toggleUserSelection(user.id)} />
-                        {user.username}
-                      </div>
-                    ))}
-                    <button onClick={handleCreateGroup} style={{ padding: "8px 16px", margin: "10px", backgroundColor: "#388e3c", color: "#fff", borderRadius: "20px" }}>作成</button>
-                    <button onClick={closeModal} style={{ padding: "8px 16px", margin: "10px", backgroundColor: "#388e3c", color: "#fff", borderRadius: "20px" }}>キャンセル</button>
-                  </div>
-                )}
+                  <h3 style={{ color: "#388e3c", marginBottom: "0px", textAlign: "center",flex: 1 }}>グループルーム</h3>
+                  <button onClick={openModal} style={{ padding: "8px 16px", margin: "10px", backgroundColor: "#388e3c", color: "#fff", borderRadius: "20px" }}>＋グループ作成</button>
+                  {isModalOpen && (
+                    <div style={{ fontSize: "18px",position: "fixed", top: "20%", left: "50%", transform: "translate(-50%, -20%)", backgroundColor: "#fff", padding: "20px", borderRadius: "10px", boxShadow: "0 4px 8px rgba(0,0,0,0.2)", width: "40%",
+                      maxWidth: "400px" }}>
+                      <h3>グループ作成</h3>
+                      <input type="text" placeholder="グループ名" value={groupName} onChange={(e) => setGroupName(e.target.value)} />
+                      {users.map((user) => (
+                        <div key={user.id } style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", marginBottom: "8px" }}>
+                          <input type="checkbox" style={{ marginRight: "20px", marginLeft:"50px" }} checked={selectedUsers.includes(user.id)} onChange={() => toggleUserSelection(user.id)} />
+                          {user.username}
+                        </div>
+                      ))}
+                      <button onClick={handleCreateGroup} style={{ padding: "8px 16px", margin: "10px", backgroundColor: "#388e3c", color: "#fff", borderRadius: "20px" }}>作成</button>
+                      <button onClick={closeModal} style={{ padding: "8px 16px", margin: "10px", backgroundColor: "#388e3c", color: "#fff", borderRadius: "20px" }}>キャンセル</button>
+                    </div>
+                  )}
               </div>
               {rooms.map((room) => (
                 <div

@@ -5,8 +5,10 @@ import (
 	"backend/models"
 	"backend/utils"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 )
@@ -15,7 +17,7 @@ import (
 func MessageHandler(w http.ResponseWriter, r *http.Request) {
 	utils.EnableCORS(w)
 	w.Header().Set("Content-Type", "application/json")
-	log.Println("⚫︎msg-1")
+
 	switch r.Method {
 	case http.MethodPost:
 		handleSendMessage(w, r)
@@ -32,20 +34,21 @@ func MessageHandler(w http.ResponseWriter, r *http.Request) {
 // メッセージ送信処理
 func handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	utils.EnableCORS(w)
+
 	var msg models.TsMessage
-	log.Println("⚫︎msg-2")
+
 	// リクエストボディのデコード
 	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
 		http.Error(w, "リクエスト形式が不正", http.StatusBadRequest)
 		return
 	}
-	log.Println("⚫︎msg-3")
+
 	// 必須フィールドチェック
 	if msg.RoomID == 0 || msg.SenderID == 0 || msg.Content == "" {
 		http.Error(w, "必須フィールドが不足しています", http.StatusBadRequest)
 		return
 	}
-	log.Println("⚫︎msg-4")
+
 	// メッセージの保存
 	msg.CreatedAt = time.Now()
 	msg.UpdatedAt = time.Now()
@@ -56,14 +59,14 @@ func handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: msg.CreatedAt,
 		UpdatedAt: msg.UpdatedAt,
 	}
-	log.Println("⚫︎msg-5")
+
 	// データベースに保存
 	if err := db.DB.Create(&message).Error; err != nil {
 		log.Println("メッセージ保存エラー:", err)
 		http.Error(w, "メッセージ保存失敗", http.StatusInternalServerError)
 		return
 	}
-	log.Println("⚫︎msg-6")
+
 	// 成功レスポンス
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "success",
@@ -75,21 +78,20 @@ func handleSendMessage(w http.ResponseWriter, r *http.Request) {
 // メッセージ取得処理
 func handleGetMessages(w http.ResponseWriter, r *http.Request) {
 	utils.EnableCORS(w)
-	log.Println("⚫︎msg-11")
+
 	// クエリパラメータからroom_idを取得
 	roomIDStr := r.URL.Query().Get("room_id")
 	if roomIDStr == "" {
 		http.Error(w, "ルームIDが必要です", http.StatusBadRequest)
 		return
 	}
-	log.Println("⚫︎msg-22")
+
 	// 文字列を整数に変換
 	roomID, err := strconv.Atoi(roomIDStr)
 	if err != nil {
 		http.Error(w, "ルームIDが不正です", http.StatusBadRequest)
 		return
 	}
-	log.Println("⚫︎msg-33")
 
 	// メッセージを格納するスライス
 	var SendMessages []struct {
@@ -100,10 +102,10 @@ func handleGetMessages(w http.ResponseWriter, r *http.Request) {
 		SenderName string `json:"sender_name"`
 	}
 
-	// GORMでSQLクエリを構築（Link形式）
 	result := db.DB.Table("messages AS m").
-		Select("m.id AS message_id, m.content, m.created_at, m.sender_id, u.username AS sender_name").
+		Select("m.id AS message_id, COALESCE(a.file_name, m.content) AS content, m.created_at, m.sender_id, u.username AS sender_name").
 		Joins("JOIN users AS u ON m.sender_id = u.id").
+		Joins("LEFT JOIN message_attachments AS a ON m.id = a.message_id").
 		Where("m.room_id = ?", roomID).
 		Find(&SendMessages)
 
@@ -114,7 +116,6 @@ func handleGetMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Println("⚫︎msg-44")
 	// JSONレスポンス
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":   "success",
@@ -124,30 +125,6 @@ func handleGetMessages(w http.ResponseWriter, r *http.Request) {
 
 // ルームメンバー取得処理（LEFT JOINを使用）
 func GetRoomMembersByUsers(user1ID int, user2ID int) *db.ChatRoom {
-	// utils.EnableCORS(w)
-	// log.Println("⚫︎msg-55")
-	// // クエリパラメータからroom_idを取得
-	// roomIDStr := r.URL.Query().Get("room_id")
-	// if roomIDStr == "" {
-	// 	http.Error(w, "ルームIDが必要です", http.StatusBadRequest)
-	// 	return
-	// }
-	// log.Println("⚫︎msg-66")
-	// roomID, err := strconv.Atoi(roomIDStr)
-	// if err != nil {
-	// 	http.Error(w, "ルームIDが不正です", http.StatusBadRequest)
-	// 	return
-	// }
-	// log.Println("⚫︎msg-77")
-	// var members []struct {
-	// 	RoomID   int    `json:"room_id"`
-	// 	RoomName string `json:"room_name"`
-	// 	IsGroup  int    `json:"is_group"`
-	// 	UserID   *int   `json:"user_id"` // NULL対応
-	// }
-
-	// LEFT JOINでルームとメンバーを取得
-	// GORMのLink形式を使ってクエリを組み立て
 	var chatroom db.ChatRoom
 
 	result := db.DB.Table("chat_rooms AS cr").
@@ -169,4 +146,118 @@ func GetRoomMembersByUsers(user1ID int, user2ID int) *db.ChatRoom {
 	}
 
 	return &chatroom
+}
+
+// ファイル送受信処理
+func UploadHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("🟠SendFileHandler：スタート")
+	utils.EnableCORS(w)
+
+	// メソッド確認
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "メソッドが許可されていません", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// フォームの最大メモリサイズを指定
+	err := r.ParseMultipartForm(10 << 20) // 10MB
+	if err != nil {
+		http.Error(w, "フォームのパースに失敗しました", http.StatusBadRequest)
+		return
+	}
+
+	// ファイルの解析
+	file, handler, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "ファイルを受け取れませんでした: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	senderID, err1 := strconv.Atoi(r.FormValue("senderID"))
+	if err1 != nil {
+		http.Error(w, "ファイルを受け取れませんでした: "+err1.Error(), http.StatusBadRequest)
+		return
+	}
+	roomID, err := strconv.Atoi(r.FormValue("roomID"))
+	if err != nil {
+		http.Error(w, "ファイルを受け取れませんでした: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	log.Println(senderID, roomID)
+
+	// ファイル名を取得して表示
+	fmt.Println("ファイル名:", handler.Filename)
+
+	// 保存パスを作成
+	saveDir := "./uploads/"
+	os.MkdirAll(saveDir, os.ModePerm) // ディレクトリを作成
+
+	savePath := saveDir + handler.Filename
+
+	// ファイルを作成
+	dst, err := os.Create(savePath)
+	if err != nil {
+		http.Error(w, "ファイルを作成できません", http.StatusInternalServerError)
+		return
+	}
+	defer dst.Close()
+
+	// ファイルをコピーして保存
+	_, err = dst.ReadFrom(file)
+	if err != nil {
+		http.Error(w, "ファイルの保存に失敗しました", http.StatusInternalServerError)
+		return
+	}
+
+	// アップロード成功
+	fileURL := "http://localhost:8080/uploads/" + handler.Filename
+	fmt.Fprintf(w, "アップロード成功: %s\n", fileURL)
+	log.Printf("アップロード成功: %s", fileURL)
+
+	// // メッセージIDの取得
+	// メッセージの保存
+	message := db.Message{
+		RoomID:    roomID,
+		SenderID:  senderID,
+		Content:   "",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	// データベースに保存
+	if err := db.DB.Create(&message).Error; err != nil {
+		log.Println("メッセージ保存エラー:", err)
+		http.Error(w, "メッセージ保存失敗", http.StatusInternalServerError)
+		return
+	}
+	log.Println("🟠メッセージテーブル追加")
+
+	att := db.MessageAttachment{
+		MessageID: message.ID,
+		FileName:  fileURL,
+		CreatedAt: time.Now(),
+	}
+
+	log.Println("🟠データベース作成")
+
+	if err := db.DB.Create(&att).Error; err != nil {
+		log.Println("ファイル保存エラー:", err)
+		http.Error(w, "ファイル保存失敗", http.StatusInternalServerError)
+		return
+	}
+
+	log.Println("🟠SendFileHandler：エンド")
+
+	// 成功レスポンス
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": "ファイル保存完了",
+		"data":    message,
+	})
 }

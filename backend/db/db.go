@@ -16,13 +16,13 @@ import (
 // usersテーブルの構造体
 type Users struct {
 	ID           uint   `gorm:"primaryKey" json:"id"`
-	Username     string `json:"username"`
+	Username     string `json:"username" gorm:"unique"`
 	PasswordHash string `json:"password_hash"`
 }
 
 type ChatRoom struct {
 	ID        int       `gorm:"primaryKey" json:"id"`
-	RoomName  string    `json:"room_name"`
+	RoomName  string    `json:"room_name"  gorm:"unique;not null"`
 	IsGroup   int       `json:"is_group"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -45,6 +45,13 @@ type Message struct {
 	ThreadRootID int       `gorm:"index"` // 親メッセージID（スレッド）
 }
 
+type MessageAttachment struct {
+	ID        int       `gorm:"primaryKey" json:"id"`
+	MessageID int       `gorm:"not null;index" json:"message_id"`   // 関連メッセージID
+	FileName  string    `gorm:"type:varchar(255)" json:"file_name"` // ファイル名
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`   // 作成日時
+}
+
 var DB *gorm.DB
 
 // データベース接続
@@ -61,31 +68,23 @@ func Connect() error {
 
 // ハッシュ化パスワードと入力パスワードを比較する関数
 func CheckPasswordHash(password, hash string) bool {
-	// bcrypt.CompareHashAndPasswordで比較
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	return err == nil
 }
 
 // ユーザーを保存
 func SaveUser(username, password string) error {
-	log.Println("db-11111", password)
+	log.Println("db.パスワード：", password)
 	// パスワードをハッシュ化
 	hashedPassword, err := HashPassword(password)
 	if err != nil {
 		return fmt.Errorf("パスワードハッシュ化エラー: %v", err)
 	}
 
-	log.Println("db-22222")
 	// ハッシュ化成功時にユーザーを保存（仮にDBに保存する処理とする）
 	user := Users{Username: username, PasswordHash: hashedPassword}
 	result := DB.Create(&user)
 	return result.Error
-
-	// ここでは、ハッシュ化されたパスワードを利用してDBに保存
-	// fmt.Println("ユーザー保存成功:", username, hashedPassword)
-	// log.Println("33333")
-	// // 処理が成功した場合、nilを返す
-	// return nil
 }
 
 // ハッシュ化したパスワードを生成
@@ -97,65 +96,61 @@ func HashPassword(password string) (string, error) {
 	return string(hashed), nil
 }
 
-// メッセージ画面の色々な取得
-
-// func SaveMessage(sender, content string, messagesID uint) error {
-// 	message := Message{Sender: sender, Content: content, MessagesID: messagesID}
-// 	return DB.Create(&message).Error
-// }
-
-// func GetMessagesByRecipient(messagesID string) ([]Message, error) {
-// 	var messages []Message
-// 	result := DB.Where("messages = ?", messagesID).Find(&messages)
-// 	return messages, result.Error
-// }
-
 // 全ユーザーを取得する関数
-func GetAllUsers() ([]Users, error) {
+func GetOtherUsers(loginedUserID int) ([]Users, error) {
+	log.Println("🟡GetOtherUsers")
 	var users []Users
-	result := DB.Select("id", "username").Find(&users)
-	if result.Error != nil {
-		log.Println("ユーザー一覧取得エラー:", result.Error)
-		return nil, fmt.Errorf("ユーザー一覧取得エラー: %v", result.Error)
+	result := DB.Table("users").
+		Select("id, username").
+		Where("id != ?", loginedUserID).
+		Order("ID ASC").
+		Scan(&users).Error
+	if result != nil {
+		fmt.Println("エラー:", result)
+		return nil, fmt.Errorf("ユーザー一覧取得エラー：%v", result)
 	}
 	return users, nil
 }
 
-// データベース初期化
-// func InitDB() {
-// 	var err error
+// 所属個別ルームを取得
+func GetMyRooms(loginedUserID int) ([]ChatRoom, error) {
+	log.Println("🟡GetOtherUsers")
+	var rooms []ChatRoom
 
-// 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-// 		os.Getenv("DB_HOST"),
-// 		os.Getenv("DB_PORT"),
-// 		os.Getenv("DB_USER"),
-// 		os.Getenv("DB_PASSWORD"),
-// 		os.Getenv("DB_NAME"),
-// 	)
+	// GORMクエリ
+	// room_nameには、相手の名前にして返す!.
+	result := DB.Table("chat_rooms cr").
+		Select("cr.id AS room_id, u.username AS room_name, cr.is_group, cr.created_at, cr.updated_at").
+		Joins("JOIN room_members rm1 ON cr.id = rm1.room_id").
+		Joins("JOIN room_members rm2 ON cr.id = rm2.room_id").
+		Joins("JOIN users u ON rm2.user_id = u.id").
+		Where("rm1.user_id = ? AND cr.is_group = 0 AND rm2.user_id <> ?", loginedUserID, loginedUserID).
+		Order("cr.id ASC").
+		Scan(&rooms).Error
 
-// 	DB, err = sql.Open("postgres", connStr)
-// 	if err != nil {
-// 		log.Fatalf("データベース接続エラー: %v", err)
-// 	}
+	if result != nil {
+		fmt.Println("エラー:", result)
+		return nil, fmt.Errorf("ルーム一覧取得エラー：%v", result)
+	}
+	return rooms, nil
+}
 
-// 	if err = DB.Ping(); err != nil {
-// 		log.Fatalf("データベース接続確認エラー: %v", err)
-// 	}
+// 所属グループルームを取得
+func GetMyGroupRooms(userid int) ([]ChatRoom, error) {
+	log.Println("GetMyGroupRooms")
+	var rooms []ChatRoom
 
-// 	log.Println("データベース接続成功")
-// }
+	// GORMクエリ
+	result := DB.Table("chat_rooms cr").
+		Select("cr.*").
+		Joins("JOIN room_members rm ON cr.id = rm.room_id").
+		Where("rm.user_id = ? and cr.is_group = 1", userid).
+		Order("cr.id ASC").
+		Scan(&rooms).Error
 
-// メッセージ保存関数
-// func SaveMessages(sender, content string, recipientID int) error {
-// 	message := Message{
-// 		Sender:      sender,
-// 		Content:     content,
-// 		RecipientID: recipientID,
-// 		CreatedAt:   time.Now(),
-// 	}
-// 	result := DB.Create(&message)
-// 	if result.Error != nil {
-// 		return fmt.Errorf("メッセージ保存エラー: %v", result.Error)
-// 	}
-// 	return nil
-// }
+	if result != nil {
+		fmt.Println("エラー:", result)
+		return nil, fmt.Errorf("ルーム一覧取得エラー：%v", result)
+	}
+	return rooms, nil
+}
