@@ -3,8 +3,11 @@ package main
 import (
 	"backend/db" // データベース接続を管理する自作パッケージ
 	"backend/handlers"
+
+	// 正しいパッケージパス
 	"log"
 	"net/http" // HTTPサーバーを作成・操作するライブラリ
+	// gorilla/websocketを別名でインポート
 )
 
 // メイン関数：サーバーを起動する
@@ -14,6 +17,10 @@ func main() {
 	} else {
 		log.Println("DB接続成功")
 	}
+
+	// WebSocketエンドポイント
+	http.HandleFunc("/ws", handlers.HandleWebSocket)
+	go handlers.BroadcastMessages()
 
 	http.HandleFunc("/", handlers.Handler)
 
@@ -31,6 +38,9 @@ func main() {
 	http.HandleFunc("/getRoomMessages", handlers.MessageHandler)
 	http.HandleFunc("/message", handlers.MessageHandler)
 	http.HandleFunc("/sendFile", handlers.UploadHandler)
+	http.HandleFunc("/updataUnReadMessage", handlers.UpdataMessageHandler)
+
+	http.HandleFunc("/read", handlers.MarkMessageAsRead)
 
 	log.Println("サーバー起動中 http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))

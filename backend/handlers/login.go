@@ -10,6 +10,8 @@ import (
 	"net/http"
 )
 
+//var wsConnection *websocket.Conn // WebSocket接続をグローバルに保存
+
 // ログイン処理
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	utils.EnableCORS(w)
@@ -60,6 +62,16 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Println("auth_token：", token)
+
+	// WebSocket接続確立（ログイン時に1回だけ）
+	// if wsConnection == nil {
+	// 	ws, err := InitWebSocketConnection(w, r)
+	// 	if err != nil {
+	// 		http.Error(w, "WebSocket接続エラー", http.StatusInternalServerError)
+	// 		return
+	// 	}
+	// 	wsConnection = ws // WebSocket接続をグローバル変数に保存
+	// }
 
 	// レスポンスを返す
 	w.Header().Set("Content-Type", "application/json")

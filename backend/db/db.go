@@ -20,14 +20,21 @@ type Users struct {
 	PasswordHash string `json:"password_hash"`
 }
 
-type ChatRoom struct {
-	ID        int       `gorm:"primaryKey" json:"id"`
-	RoomName  string    `json:"room_name"  gorm:"unique;not null"`
-	IsGroup   int       `json:"is_group"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
+// type ChatRoom struct {
+// 	ID        int       `gorm:"primaryKey" json:"id"`
+// 	RoomName  string    `json:"room_name"  gorm:"unique;not null"`
+// 	IsGroup   int       `json:"is_group"`
+// 	CreatedAt time.Time `json:"created_at"`
+// 	UpdatedAt time.Time `json:"updated_at"`
+// }
 
+type ChatRoom struct {
+	ID        int       `gorm:"primaryKey;column:id" json:"id"`
+	RoomName  string    `gorm:"column:room_name" json:"room_name"`
+	IsGroup   int       `gorm:"column:is_group" json:"is_group"`
+	CreatedAt time.Time `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at" json:"updated_at"`
+}
 type RoomMember struct {
 	ID       int `gorm:"primaryKey"`
 	RoomID   int `json:"room_id"` // チャットルームのID
@@ -50,6 +57,14 @@ type MessageAttachment struct {
 	MessageID int       `gorm:"not null;index" json:"message_id"`   // 関連メッセージID
 	FileName  string    `gorm:"type:varchar(255)" json:"file_name"` // ファイル名
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`   // 作成日時
+}
+
+type MessageReads struct {
+	//ID        int       `gorm:"primaryKye"  json:"id"`
+	MessageID int       `gorm:"not null;index" json:"message_id"`
+	UserID    int       `json:"room_id"`
+	Reaction  string    `gorm:"type:varchar" json:"reaction"`
+	ReadAt    time.Time `gorm:"autoCreateTime" json:"read_at"`
 }
 
 var DB *gorm.DB
@@ -118,19 +133,23 @@ func GetMyRooms(loginedUserID int) ([]ChatRoom, error) {
 	var rooms []ChatRoom
 
 	// GORMクエリ
-	// room_nameには、相手の名前にして返す!.
-	result := DB.Table("chat_rooms cr").
-		Select("cr.id AS room_id, u.username AS room_name, cr.is_group, cr.created_at, cr.updated_at").
-		Joins("JOIN room_members rm1 ON cr.id = rm1.room_id").
-		Joins("JOIN room_members rm2 ON cr.id = rm2.room_id").
-		Joins("JOIN users u ON rm2.user_id = u.id").
-		Where("rm1.user_id = ? AND cr.is_group = 0 AND rm2.user_id <> ?", loginedUserID, loginedUserID).
+	// room_nameには、相手の名前にして返す!
+	// ここのSQL文がおかしくて、ルームIDを取得できなかった
+	result := DB.Table("chat_rooms AS cr").
+		Select("cr.id AS id, u.username AS room_name, cr.is_group, cr.created_at, cr.updated_at").
+		Joins("JOIN room_members AS rm1 ON cr.id = rm1.room_id").
+		Joins("JOIN room_members AS rm2 ON cr.id = rm2.room_id AND rm2.user_id <> ?", loginedUserID).
+		Joins("JOIN users AS u ON rm2.user_id = u.id").
+		Where("cr.is_group = 0 AND rm1.user_id = ?", loginedUserID).
+		Group("cr.id, u.username, cr.is_group, cr.created_at, cr.updated_at").
+		Having("COUNT(DISTINCT rm2.user_id) = 1").
 		Order("cr.id ASC").
 		Scan(&rooms).Error
+	log.Println("🍅：", rooms)
 
 	if result != nil {
 		fmt.Println("エラー:", result)
-		return nil, fmt.Errorf("ルーム一覧取得エラー：%v", result)
+		return nil, fmt.Errorf("✖︎ルーム一覧取得エラー：%v", result)
 	}
 	return rooms, nil
 }

@@ -43,6 +43,7 @@ export default function RoomSelect() {
   const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
   const router = useRouter();
 
+  // ルーム作成モーダル
   const openModal = () => {
     setSelectedUsers([]);
     setIsModalOpen(true);
@@ -195,7 +196,7 @@ export default function RoomSelect() {
         const loggedUsername = localStorage.getItem("loggedInUser");
         const loggedIDStr = localStorage.getItem("loggedInUserID");
     
-        var aaa = loggedIDStr !== null ? parseInt(loggedIDStr) : null 
+        // var aaa = loggedIDStr !== null ? parseInt(loggedIDStr) : null 
 
         const res = await fetch("http://localhost:8080/PersonalRoomSelect", {
           method: "POST",
@@ -222,6 +223,7 @@ export default function RoomSelect() {
     fetchPersonalRooms();
   }, []);
 
+  // 所属している個別ルーム一覧の取得
   useEffect(() => {
     const fetchRooms = async () => {
       try {
@@ -264,7 +266,7 @@ export default function RoomSelect() {
 
 
   
-  // ユーザーを選択して個別ルームへ
+  // ユーザーを選択して個別ルームへ (使ってない)
   const handleSelectUser = async (user: User) => {
     try {
       const userIDStr = localStorage.getItem("loggedInUserID");
@@ -286,17 +288,16 @@ export default function RoomSelect() {
         },
         body: JSON.stringify({ user1: userID, user2: selectedUserID}),
       });
+      
 
       if (!res.ok) {
         throw new Error("チャットルーム作成失敗");
       }
-
       const data = await res.json();
       if (data && data.roomId) {
         localStorage.setItem("token", token ? token : "");
         localStorage.setItem("roomName", data.roomId);
   
-        router.push(`/${data.roomId}`);
       } else {
         alert("ルームIDが取得できませんでした");
       }
@@ -320,7 +321,12 @@ export default function RoomSelect() {
         router.push("/top");
         return;
       }
+      if (!room.id || room.id === 0) {
+        alert("ルームIDが無効です");
+        return;
+    }
 
+      console.log(room);
       setSelectedRoom(room);
 
       localStorage.setItem("token", token);
@@ -331,6 +337,29 @@ export default function RoomSelect() {
     }
   };
 
+  // ルーム作成時にもリアルタイム反映をさせた
+  useEffect(() => {
+    // // WebSocket接続の処理
+    // const socket = createWebSocket((message: any) => {
+    //   console.log("受信したメッセージ:", message);
+    //   const newRoom = JSON.parse(message);
+
+    //   // 新しいルームがグループルームの場合
+    //   if (newRoom.is_group === 1) {
+    //     setRooms((prevRooms) => [...prevRooms, newRoom]); // グループルームを追加
+    //   } else {
+    //     setPersonals((prevPersonals) => [...prevPersonals, newRoom]); // 個別ルームを追加
+    //   }
+    // });
+
+    // socket.onopen = () => {
+    //   console.log("WebSocket接続成功！");
+    // };
+
+    // return () => {
+    //   socket.close();
+    // };
+  }, []); // 空の依存配列なので、一度だけ実行される
 
 
   const handleLogout = () => {
@@ -345,13 +374,16 @@ export default function RoomSelect() {
       <Head>
         <title>チャットルーム選択</title>
       </Head>
-      <div style={{
-        background: "linear-gradient(180deg, #e8f5e9, #fffde7)",
-        minHeight: "110vh",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        alignItems: "center"
+      <div
+        style={{
+          background: "linear-gradient(180deg, #e8f5e9, #fffde7)",
+          minHeight: "100vh",
+          height: "100vh",            // 明示的に高さを指定
+          overflow: "hidden",         // スクロールを抑制
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          alignItems: "center"
       }}>
         <div style={{
           background: "white",
@@ -364,13 +396,17 @@ export default function RoomSelect() {
         }}>
           <h2 style={{ color: "#388e3c", fontWeight: "bold", marginBottom: "15px" }}>チャットルーム選択</h2>
           <p style={{ color: "#555", marginBottom: "25px", fontSize: "16px" }}>ログイン中: {loggedInUser}</p>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "40px", marginBottom: "10px" }}>
             {/* 個別チャット */}
-            <div style={{ flex: 5 }}>
+            <div style={{
+              flex: 5,
+              height: "450px",      // 高さを固定
+              overflowY: "scroll",    // スクロールを有効にする
+              alignItems: "flex-start"}}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
                 <div style={{ flex: 1 }}></div>
                   <h3 style={{ color: "#388e3c", marginBottom: "0px", textAlign: "center",flex: 1 }}>個別ルーム</h3>
-                  <button onClick={openPersonalModal} style={{ padding: "8px 16px", margin: "10px", backgroundColor: "#388e3c", color: "#fff", borderRadius: "20px" }}>＋ユーザーを追加</button>
+                  <button onClick={openPersonalModal} style={{ padding: "8px 16px", margin: "10px", backgroundColor: "#388e3c", color: "#fff", borderRadius: "20px" }}>＋ユーザー追加</button>
                   {isPersonalModalOpen && (
                       <div style={{ fontSize: "18px",position: "fixed", top: "20%", left: "50%", transform: "translate(-50%, -20%)", backgroundColor: "#fff", padding: "20px", borderRadius: "10px", boxShadow: "0 4px 8px rgba(0,0,0,0.2)", width: "40%",
                         maxWidth: "400px" }}>
@@ -405,13 +441,18 @@ export default function RoomSelect() {
                     transition: "all 0.3s",
                   }}
                 >
-                  <div style={{ backgroundColor: "#81c784", width: "10px", height: "10px", borderRadius: "50%", marginRight: "10px" }}></div>
+                  <div style={{ backgroundColor: "#81c784", width: "10px", height: "10px", borderRadius: "50%", marginRight: "15px" }}></div>
                   <span style={{ color: "#333", fontSize: "18px", textAlign: "left" }}>{personal.room_name}</span>
                 </div>
               ))}
             </div>
             {/* グループチャット */}
-            <div style={{ flex: 5 }}>
+            <div style={{
+              flex: 5,
+              height: "460px",      // 高さを固定
+              overflowY: "scroll",    // スクロールを有効にする
+              alignItems: "flex-start"  // 上揃えに変更
+              }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
                 <div style={{ flex: 1 }}></div>
                   <h3 style={{ color: "#388e3c", marginBottom: "0px", textAlign: "center",flex: 1 }}>グループルーム</h3>
@@ -451,7 +492,7 @@ export default function RoomSelect() {
                     transition: "all 0.3s",
                   }}
                 >
-                  <div style={{ backgroundColor: "#81c784", width: "10px", height: "10px", borderRadius: "50%", marginRight: "10px" }}></div>
+                  <div style={{ backgroundColor: "#81c784", width: "10px", height: "10px", borderRadius: "50%", marginRight: "15px" }}></div>
                   <span style={{ color: "#333", fontSize: "18px", textAlign: "left" }}>{room.room_name}</span>
                 </div>
               ))}
