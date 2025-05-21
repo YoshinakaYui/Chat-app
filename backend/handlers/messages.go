@@ -13,6 +13,11 @@ import (
 	"time"
 )
 
+type UnReadMsg struct {
+	RoomID         int `json:"room_id"`
+	LoggedInUserID int `json:"login_id"`
+}
+
 // メッセージ送信・取得ハンドラー
 func MessageHandler(w http.ResponseWriter, r *http.Request) {
 	utils.EnableCORS(w)
@@ -31,7 +36,7 @@ func MessageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// メッセージ送信処理
+// メッセージ更新処理
 func handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	utils.EnableCORS(w)
 
@@ -67,6 +72,8 @@ func handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Println("🟣：", message)
+
 	// 成功レスポンス
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "success",
@@ -81,6 +88,7 @@ func handleGetMessages(w http.ResponseWriter, r *http.Request) {
 
 	// クエリパラメータからroom_idを取得
 	roomIDStr := r.URL.Query().Get("room_id")
+	log.Println("🟣：", roomIDStr)
 	if roomIDStr == "" {
 		http.Error(w, "ルームIDが必要です", http.StatusBadRequest)
 		return
@@ -88,6 +96,7 @@ func handleGetMessages(w http.ResponseWriter, r *http.Request) {
 
 	// 文字列を整数に変換
 	roomID, err := strconv.Atoi(roomIDStr)
+	log.Println("🟣：", roomID)
 	if err != nil {
 		http.Error(w, "ルームIDが不正です", http.StatusBadRequest)
 		return
@@ -100,16 +109,22 @@ func handleGetMessages(w http.ResponseWriter, r *http.Request) {
 		CreatedAt  string `json:"created_at"`
 		SenderID   int    `json:"sender_id"`
 		SenderName string `json:"sender_name"`
+		ReadCount  int    `json:"reader_count"` // 既読のカウント変数、（SQLに変数＝１しとく）0以外は未読
 	}
 
-	result := db.DB.Table("messages AS m").
+	// メッセージをデータベースから取得する
+	result := db.DB.Table("messages AS m"). // messagesを検索対象にする
+		// メッセージID、内容、作成時間、送信者ID、送信者名をセレクト
 		Select("m.id AS message_id, COALESCE(a.file_name, m.content) AS content, m.created_at, m.sender_id, u.username AS sender_name").
 		Joins("JOIN users AS u ON m.sender_id = u.id").
 		Joins("LEFT JOIN message_attachments AS a ON m.id = a.message_id").
 		Where("m.room_id = ?", roomID).
+		Order("created_at ASC").
 		Find(&SendMessages)
 
-		// エラー処理
+	// log.Println("🟣ルームメッセージ一覧：", SendMessages)
+
+	// エラー処理
 	if result.Error != nil {
 		log.Println("メッセージ取得エラー:", result.Error)
 		http.Error(w, "メッセージが見つかりません", http.StatusNotFound)
@@ -121,6 +136,7 @@ func handleGetMessages(w http.ResponseWriter, r *http.Request) {
 		"status":   "success",
 		"messages": SendMessages,
 	})
+
 }
 
 // ルームメンバー取得処理（LEFT JOINを使用）
@@ -148,9 +164,77 @@ func GetRoomMembersByUsers(user1ID int, user2ID int) *db.ChatRoom {
 	return &chatroom
 }
 
+// 既読未読処理
+func UpdataMessageHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("🟠UpdataMessageHandler：スタート")
+	utils.EnableCORS(w)
+
+	// メソッド確認
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "メソッドが許可されていません", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// リクエストボディのデコード
+	var msg UnReadMsg
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		http.Error(w, "リクエスト形式が不正", http.StatusBadRequest)
+		return
+	}
+
+	// 必須フィールドチェック
+	if msg.RoomID == 0 || msg.LoggedInUserID == 0 {
+		http.Error(w, "必須フィールドが不足しています", http.StatusBadRequest)
+		return
+	}
+
+	var unreadIDs []int
+	err := db.DB.Table("messages AS m").
+		Select("m.id").
+		Where("m.room_id = ?", msg.RoomID).
+		Where("NOT EXISTS ("+
+			"SELECT 1 FROM message_reads AS mr "+
+			"WHERE mr.message_id = m.id AND mr.user_id = ?)", msg.LoggedInUserID).
+		Order("m.id ASC").
+		Scan(&unreadIDs).Error
+
+	if err != nil {
+		log.Println("❌ 未読メッセージIDの取得失敗:", err)
+	} else {
+		fmt.Println("📩 未読メッセージID:", unreadIDs)
+	}
+
+	log.Println("🟠未読メッセージID：", msg.LoggedInUserID, unreadIDs)
+
+	var msgR db.MessageReads
+	msgR.UserID = msg.LoggedInUserID
+	msgR.ReadAt = time.Now()
+	for i := 0; i < len(unreadIDs); i++ {
+		log.Println(i)
+
+		msgR.MessageID = unreadIDs[i]
+
+		// データベースに保存
+		if err := db.DB.Create(&msgR).Error; err != nil {
+			log.Println("メッセージ保存エラー:", err)
+			http.Error(w, "メッセージ保存失敗", http.StatusInternalServerError)
+			return
+		}
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": "既読完了",
+	})
+}
+
 // ファイル送受信処理
 func UploadHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("🟠SendFileHandler：スタート")
+	log.Println("🟠UploadHandler：スタート")
 	utils.EnableCORS(w)
 
 	// メソッド確認
@@ -236,15 +320,12 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "メッセージ保存失敗", http.StatusInternalServerError)
 		return
 	}
-	log.Println("🟠メッセージテーブル追加")
 
 	att := db.MessageAttachment{
 		MessageID: message.ID,
 		FileName:  fileURL,
 		CreatedAt: time.Now(),
 	}
-
-	log.Println("🟠データベース作成")
 
 	if err := db.DB.Create(&att).Error; err != nil {
 		log.Println("ファイル保存エラー:", err)
@@ -259,5 +340,6 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		"status":  "success",
 		"message": "ファイル保存完了",
 		"data":    message,
+		"image":   fileURL,
 	})
 }

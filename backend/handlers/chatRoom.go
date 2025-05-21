@@ -195,6 +195,7 @@ func CreateGroupRoom(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "メンバー作成失敗", http.StatusInternalServerError)
 		return
 	}
+
 	log.Println("🟡CreateGroupRoom：D")
 	log.Println("新規グループルーム作成成功:", room.ID)
 	json.NewEncoder(w).Encode(map[string]interface{}{
