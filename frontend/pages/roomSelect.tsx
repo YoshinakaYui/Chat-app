@@ -223,7 +223,7 @@ export default function RoomSelect() {
     fetchPersonalRooms();
   }, []);
 
-  // 所属している個別ルーム一覧の取得
+  // 所属しているグループルーム一覧の取得
   useEffect(() => {
     const fetchRooms = async () => {
       try {
