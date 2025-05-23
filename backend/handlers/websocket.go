@@ -17,13 +17,6 @@ type IncomingMessage struct {
 	Content    string `json:"content"`
 }
 
-// type OutgoingMessage struct {
-// 	RoomID     int    `json:"id"`
-// 	SenderID   int    `json:"senderid"`
-// 	SenderName string `json:"sendername"`
-// 	Content    string `json:"content"`
-// }
-
 type JoinEvent struct {
 	Type   string `json:"type"` // "join"
 	RoomID int    `json:"roomId"`
@@ -65,13 +58,6 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// クライアントをmapに追加
 	clients[ws] = true
 	log.Println("WebSocket接続確立:", ws.RemoteAddr())
-
-	// log.Println("🟦：かきくけこ")
-	// log.Println(ws.ReadMessage())
-
-	// log.Println("🔁 メッセージ待機中...") // ループの先頭
-	// _, msg, err := ws.ReadMessage()
-	// log.Println("📥 メッセージ受信:", string(msg)) // 成功時
 
 	for {
 		// メッセージの受信
