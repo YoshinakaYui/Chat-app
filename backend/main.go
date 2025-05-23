@@ -44,7 +44,7 @@ func main() {
 
 	// メッセージ削除、編集
 	http.HandleFunc("/deleteMessage", handlers.DeleteMessageHandler)
-	http.HandleFunc("/EditMessage", handlers.DeleteMessageHandler)
+	http.HandleFunc("/editMessage", handlers.EditMessageHandler)
 
 	log.Println("サーバー起動中 http://localhost:8080")
 	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))

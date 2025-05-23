@@ -36,6 +36,11 @@ const ChatRoom = () => {
   const isOtherUserInRoomRef = useRef(false);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  const [editingId, setEditingId] = useState<number | null>(null); // 編集中のメッセージID
+  const [isEditing, setIsEditing] = useState(false);  
+  const [editText, setEditText] = useState<string>(""); // 編集中の内容
+
+
 
   useEffect(() => {
     // 下までスクロール
@@ -359,9 +364,9 @@ if (data && Array.isArray(data.messages)) {
   //   onUpdate: (id: string, newTsxt: string) => void;
   //   onDelete: (id: string) => void;
   // }> = ({messageaction, onUpdate, onDelete}) => {
-  //   const [isEditing, setIsEditing] = useState(false);
-  //   const [editText, setEditText] = useState(messageaction.text);
-  //   const [hovered, setHovered] = useState(false);
+  //   // const [isEditing, setIsEditing] = useState(false);
+  //   // const [editText, setEditText] = useState(messageaction.text);
+  //   // const [hovered, setHovered] = useState(false);
   // }
   // console.log(ChatMessage);
 
@@ -370,49 +375,109 @@ if (data && Array.isArray(data.messages)) {
   //     onUpdate(messageaction.id, editText);
   //     setIsEditing(false);
   //   }
-  // }
+  // };
 
+  //const [hovered, setHovered] = useState(false);
 
   //リアクション
   const handleReact = (id: number) => {
     console.log("リアクション:", id);
   };
   
-  // 編集
-  const handleEdit = (id: number) => {
-    console.log("編集:", id);
-    // 編集モーダルやインライン編集に繋げてもOK
-  };
+  // 編集    console.log("編集:", id);
+  const handleEdit = async (id: number) => {
+    const hoveredMessage = messages.find(msg => msg.id === hoveredMessageId);
+    console.log("-----1：", hoveredMessage);
+
+    if (editText.trim() === "") {
+      setIsEditing(false);
+      alert("メッセージを入力して下さい");
+      console.log("-----2：", hoveredMessage);
+      return;
+    }
+    try{
+      const res = await fetch(`http://localhost:8080/editMessage?id=${id}`,{
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({content: editText}),
+      });
+      console.log("-----3：", hoveredMessage);
+
+      if(!res.ok) throw new Error("編集失敗");
+
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === id ? { ...msg, content: editText } : msg))
+      );
+      setEditingId(null);
+    } catch(error) {
+      console.error("保存失敗", error);
+      alert("メッセージの更新に失敗しました...")
+    }
+  }
+
   
 
 
-  // if (hoveredMessage) {
-  //   console.log("選択中のメッセージ内容:", hoveredMessage.content);
-  // }
-
-  // 削除
-  const handleDelete = async (msg: number) => {
+  // 削除 と 取り消し //(msg)?
+  const handleDelete = async (id: number) => {
     const hoveredMessage = messages.find(msg => msg.id === hoveredMessageId);
     console.log("-----：", hoveredMessageId);
     console.log("メッセージID📝：", hoveredMessage);
   
-    console.log("削除：", msg);
+    console.log("削除：", id);
     const confirmed = window.confirm("このメッセージを削除しますか？");
     if (!confirmed) return;
     
     // 削除処理の実装へ
     try{
-      const res = await fetch(`http://localhost:8080/deleteMessage?id=${msg}`, { // id = message.id
+      const res = await fetch(`http://localhost:8080/deleteMessage?id=${id}`, { // id = message.id
         method: "DELETE",
       });
-        if (!res.ok) throw new Error("削除失敗");
-
+        if (!res.ok) {
+          throw new Error("削除失敗");
+        } else {
+          alert("メッセージを削除しました");
+        }
         // onDelete(id); // ローカル状態から削除
         // setMessages((prev) => prev.filter((msg) => msg.id !== id));
+
+        // const deletedMessage = messages.find((msg) => msg.id === id);
+        // // 1. 削除対象を取り除く
+        // setMessages((prev) => prev.filter((msg) => msg.id !== id));
+        // // 2. 削除ログメッセージを新しく追加
+        // if (deletedMessage) {
+        //   const logMsg = {
+        //     id: Date.now(), // 仮のID
+        //     sender: 0, // システムメッセージ的な扱い
+        //     sendername: null,
+        //     type: "text",
+        //     content: `${deletedMessage.sendername ?? "ユーザー"}がメッセージを削除しました`,
+        //     allread: true,
+        //   };
+          //setMessages((prev) => [...prev, logMsg]);
+
+              // ✅ メッセージを「削除済み表示」に差し替える
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === id
+                ? {
+                    ...msg,
+                    content: "（このメッセージは削除されました）",
+                    type: "text", // 念のため
+                  }
+                : msg
+            )
+          );
+
+          console.log(`🗑️ メッセージ${id}を削除しました`);
+      
       } catch (err) {
         alert("削除できませんでした");
         console.error("削除エラー：", err);
       }
+
   };
 
   return (
@@ -494,6 +559,38 @@ if (data && Array.isArray(data.messages)) {
                       position: "relative",
                     }}
                   >
+                    {editingId === msg.id ? (
+                      <>
+                        <input
+                          value={editText}
+                          onChange={(e) => setEditText(e.target.value)}
+                          style={{
+                            width: "100%",
+                            padding: "8px",
+                            fontSize: "16px",
+                            border: "1px solid #ccc",
+                            borderRadius: "8px",
+                          }}
+                          autoFocus
+                        />
+                          <div style={{ marginTop: "6px", display: "flex", gap: "10px" }}>
+                            <button
+                              onClick={() => handleEdit(msg.id)}
+                              style={{ padding: "4px 10px", fontSize: "13px" }}
+                            >
+                              保存
+                            </button>
+                            <button
+                              onClick={() => setEditingId(null)}
+                              style={{ padding: "4px 10px", fontSize: "13px", color: "#777" }}
+                            >
+                              キャンセル
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                      
                     {/* 本文 or 画像 */}
                     {msg.content.startsWith("http") &&
                       msg.content.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) ? (
@@ -513,13 +610,15 @@ if (data && Array.isArray(data.messages)) {
                           fontSize: "17px",
                           lineHeight: "1.6",
                           whiteSpace: "pre-wrap",
-                          color: "#222",
+                          color: msg.content === "（このメッセージは削除されました）" ? "#888" : "#222",
+                          fontStyle: msg.content === "（このメッセージは削除されました）" ? "italic" : "normal",
                         }}
                       >
                         {msg.content}
                       </div>
                     )}
-              
+                  </>
+                )}
                     {/* 既読 */}
                     {/* {msg.allread && isMyMessage && isOtherUserInRoomRef.current && ( */}
                     {msg.allread ? (
@@ -562,8 +661,15 @@ if (data && Array.isArray(data.messages)) {
                           <span 
                           style={{
                             fontSize: "13px",
+                            cursor: "pointer",
                           }}
-                          onClick={() => handleEdit(msg.id)}>編集</span>
+                          //  onClick={() => handleEdit(msg.id)}>編集</span>
+                          onClick={() => {
+                            setEditingId(msg.id);
+                            setEditText(msg.content);
+                          }}
+                          >編集</span>
+
                           <span
                           style={{
                             fontSize: "13px",
