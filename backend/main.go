@@ -42,7 +42,11 @@ func main() {
 
 	http.HandleFunc("/read", handlers.MarkMessageAsRead)
 
-	log.Println("サーバー起動中 http://localhost:8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	// メッセージ削除、編集
+	http.HandleFunc("/deleteMessage", handlers.DeleteMessageHandler)
+	http.HandleFunc("/EditMessage", handlers.DeleteMessageHandler)
 
+	log.Println("サーバー起動中 http://localhost:8080")
+	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }

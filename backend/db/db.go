@@ -20,14 +20,6 @@ type Users struct {
 	PasswordHash string `json:"password_hash"`
 }
 
-// type ChatRoom struct {
-// 	ID        int       `gorm:"primaryKey" json:"id"`
-// 	RoomName  string    `json:"room_name"  gorm:"unique;not null"`
-// 	IsGroup   int       `json:"is_group"`
-// 	CreatedAt time.Time `json:"created_at"`
-// 	UpdatedAt time.Time `json:"updated_at"`
-// }
-
 type ChatRoom struct {
 	ID        int       `gorm:"primaryKey;column:id" json:"id"`
 	RoomName  string    `gorm:"column:room_name" json:"room_name"`
@@ -65,6 +57,15 @@ type MessageReads struct {
 	UserID    int       `json:"room_id"`
 	Reaction  string    `gorm:"type:varchar" json:"reaction"`
 	ReadAt    time.Time `gorm:"autoCreateTime" json:"read_at"`
+}
+
+// 既読者カウントの構造体
+type MessageReadCount struct {
+	MessageID   int    `json:"message_id"`
+	Content     string `json:"content"`
+	SenderID    int    `json:"sender_id"`
+	ReadCount   int    `json:"read_count"`
+	UnreadCount int    `json:"unread_count"`
 }
 
 var DB *gorm.DB
@@ -134,7 +135,6 @@ func GetMyRooms(loginedUserID int) ([]ChatRoom, error) {
 
 	// GORMクエリ
 	// room_nameには、相手の名前にして返す!
-	// ここのSQL文がおかしくて、ルームIDを取得できなかった
 	result := DB.Table("chat_rooms AS cr").
 		Select("cr.id AS id, u.username AS room_name, cr.is_group, cr.created_at, cr.updated_at").
 		Joins("JOIN room_members AS rm1 ON cr.id = rm1.room_id").
@@ -173,3 +173,18 @@ func GetMyGroupRooms(userid int) ([]ChatRoom, error) {
 	}
 	return rooms, nil
 }
+
+// 入室したユーザーの人数取得
+// var memberCount int
+
+// var err = db.Raw(`
+//   SELECT COUNT(*)
+//   FROM room_members
+//   WHERE room_id = ?
+// `, roomID).Row().Scan(&memberCount)
+
+// if err != nil {
+//     log.Println("エラー:", err)
+// } else {
+//     fmt.Println("部屋の参加者数:", memberCount)
+// }

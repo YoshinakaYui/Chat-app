@@ -103,26 +103,52 @@ func handleGetMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// メッセージを格納するスライス
-	var SendMessages []struct {
-		MessageID  int    `json:"message_id"`
-		Content    string `json:"content"`
-		CreatedAt  string `json:"created_at"`
-		SenderID   int    `json:"sender_id"`
-		SenderName string `json:"sender_name"`
-		ReadCount  int    `json:"reader_count"` // 既読のカウント変数、（SQLに変数＝１しとく）0以外は未読
+	// var SendMessages []struct {
+	// 	MessageID  int    `json:"message_id"`
+	// 	Content    string `json:"content"`
+	// 	CreatedAt  string `json:"created_at"`
+	// 	Sender     int    `json:"sender"`
+	// 	SenderName string `json:"sendername"`
+	// 	AllRead    bool   `json:"allread"` // 既読のカウント変数、（SQLに変数＝１しとく）0以外は未読
+	// }
+	type SendMessages struct {
+		MessageID  int       `json:"id"`
+		Content    string    `json:"content"`
+		CreatedAt  time.Time `json:"created_at"`
+		Sender     int       `json:"sender"`
+		SenderName string    `json:"sendername" gorm:"column:sendername"`
+		AllRead    bool      `json:"allread" gorm:"column:allread"`
 	}
 
+	var messages []SendMessages
 	// メッセージをデータベースから取得する
-	result := db.DB.Table("messages AS m"). // messagesを検索対象にする
-		// メッセージID、内容、作成時間、送信者ID、送信者名をセレクト
-		Select("m.id AS message_id, COALESCE(a.file_name, m.content) AS content, m.created_at, m.sender_id, u.username AS sender_name").
+	// result := db.DB.Table("messages AS m"). // messagesを検索対象にする
+	// メッセージID、内容、作成時間、送信者ID、送信者名をセレクト
+	// Select("m.id AS message_id, COALESCE(a.file_name, m.content) AS content, m.created_at, m.sender_id, u.username AS sender_name").
+	// Joins("JOIN users AS u ON m.sender_id = u.id").
+	// Joins("LEFT JOIN message_attachments AS a ON m.id = a.message_id").
+	// Where("m.room_id = ?", roomID).
+	// Order("created_at ASC").
+	// Find(&SendMessages)
+
+	result := db.DB.Table("messages AS m").
+		Select(`
+			m.id AS message_id,
+			COALESCE(a.file_name, m.content) AS content,
+			m.created_at,
+			m.sender_id AS sender,
+			u.username AS sendername,
+			COUNT(DISTINCT mr.user_id) = COUNT(DISTINCT rm.user_id) AS allread`).
 		Joins("JOIN users AS u ON m.sender_id = u.id").
 		Joins("LEFT JOIN message_attachments AS a ON m.id = a.message_id").
+		Joins("JOIN room_members AS rm ON m.room_id = rm.room_id").
+		Joins("LEFT JOIN message_reads AS mr ON mr.message_id = m.id AND mr.user_id = rm.user_id").
 		Where("m.room_id = ?", roomID).
-		Order("created_at ASC").
-		Find(&SendMessages)
+		Group("m.id, a.file_name, m.content, m.created_at, m.sender_id, u.username").
+		Order("m.created_at ASC").
+		Scan(&messages)
 
-	// log.Println("🟣ルームメッセージ一覧：", SendMessages)
+	log.Println("🟣ルームメッセージ一覧：", messages)
 
 	// エラー処理
 	if result.Error != nil {
@@ -134,8 +160,9 @@ func handleGetMessages(w http.ResponseWriter, r *http.Request) {
 	// JSONレスポンス
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":   "success",
-		"messages": SendMessages,
+		"messages": messages,
 	})
+	log.Println("🟣ルームメッセージ一覧xxxxxx：", messages)
 
 }
 
@@ -226,9 +253,11 @@ func UpdataMessageHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	log.Println("KK：", unreadIDs)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":  "success",
-		"message": "既読完了",
+		"status":        "success",
+		"message":       "既読完了",
+		"readMessageID": unreadIDs,
 	})
 }
 
@@ -301,7 +330,7 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	// アップロード成功
 	fileURL := "http://localhost:8080/uploads/" + handler.Filename
-	fmt.Fprintf(w, "アップロード成功: %s\n", fileURL)
+	// fmt.Fprintf(w, "アップロード成功: %s\n", fileURL)
 	log.Printf("アップロード成功: %s", fileURL)
 
 	// // メッセージIDの取得
@@ -342,4 +371,20 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		"data":    message,
 		"image":   fileURL,
 	})
+}
+
+func DeleteMessageHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("🟢DeleteMessageHandler：スタート")
+	utils.EnableCORS(w)
+
+	// メソッド確認
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "メソッドが許可されていません", http.StatusMethodNotAllowed)
+		return
+	}
+
 }
