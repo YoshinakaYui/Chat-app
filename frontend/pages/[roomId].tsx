@@ -302,6 +302,7 @@ useEffect(() => {
       console.log("📨データ：", response);
       console.log("📨データ ID：", response.data.ID);
       
+      // 
       const isOnlyEmoji = /^[\p{Emoji}]{1}$/u.test(message.trim());
 
       const savedMessage: Message = {
