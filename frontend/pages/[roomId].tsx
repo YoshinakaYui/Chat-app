@@ -2,6 +2,7 @@ import { useRouter } from "next/router";
 import React from "react";
 import { useState, useEffect, useRef } from "react";
 import { createWebSocket } from "../utils/websocket";
+import EmojiPicker from 'emoji-picker-react';
 import Link from "next/link";
 
 //import styles from "@/styles/Home.module.css";
@@ -10,9 +11,10 @@ interface Message {
   id: number;
   sender: number;
   sendername : string | null;
-  type: "text" | "image"; // ★ここで区別！
+  type: "text" | "image" | "emoji";
   content: string;
   allread: boolean; // 既読状態を追跡するフラグ
+  readcount: number;
 }
 
 const ChatRoom = () => {
@@ -39,6 +41,7 @@ const ChatRoom = () => {
   const [editingId, setEditingId] = useState<number | null>(null); // 編集中のメッセージID
   const [isEditing, setIsEditing] = useState(false);  
   const [editText, setEditText] = useState<string>(""); // 編集中の内容
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false); // 絵文字
 
 
 
@@ -98,13 +101,14 @@ useEffect(() => {
         // console.log(JSON.stringify(data, null, 2));
 
         setMessages(data.messages); // BUG ← isRead が true になってる
+        console.log("😭2",messages);
 
         // ✅ nullチェック追加！
-if (data && Array.isArray(data.messages)) {
-  setMessages(data.messages);
-} else {
-  setMessages([]); // nullや不正な値の場合は空配列
-}
+        if (data && Array.isArray(data.messages)) {
+          setMessages(data.messages);
+        } else {
+          setMessages([]); // nullや不正な値の場合は空配列
+        }
 
         // とりあえずコメント
         // if (data && Array.isArray(data.messages)) {
@@ -119,6 +123,7 @@ if (data && Array.isArray(data.messages)) {
         //   console.log("🔍 formatted:", formatted);
         //   setMessages(formatted);
         // }
+
 
         // ✅ 一括既読更新（画面表示された履歴分）
         console.log("FFFFF");
@@ -136,7 +141,7 @@ if (data && Array.isArray(data.messages)) {
         const markResult = await markRes.json();
         if (markRes.ok) {
           console.log("✅ 履歴既読化成功:", markResult);
-          setMessages((prev) => prev.map((msg) => ({ ...msg, allread: true })));
+          //setMessages((prev) => prev.map((msg) => ({ ...msg, allread: true })));  // この行で、allreadが全てtrueに上書きされる！
         }
       };
 
@@ -149,15 +154,62 @@ if (data && Array.isArray(data.messages)) {
           //✅ user_joined メッセージは無視（または通知として別処理）
           if (msg.type === "user_joined") {
             console.log("👥 入室通知イベントを受信:", msg.userId);
-          // ✅ 自分以外が入室してきたときに true にする
-          if (Number(msg.userId) !== Number(userid)) {
-            isOtherUserInRoomRef.current = true;
-            setIsOtherUserInRoom(true);
-            //console.log("✅ 他のユーザーが入室：isOtherUserInRoom = true");
-            console.log("✅ isOtherUserInRoom = ",isOtherUserInRoom);
+
+            // ✅ 自分以外が入室してきたときに true にする
+            if (Number(msg.userId) !== Number(userid)) {
+              isOtherUserInRoomRef.current = true;
+              setIsOtherUserInRoom(true);
+              //console.log("✅ 他のユーザーが入室：isOtherUserInRoom = true");
+              console.log("✅ isOtherUserInRoom = ",isOtherUserInRoom);
+            }
+            return;
           }
-          return;
-        }
+
+          // 新しいメッセージの既読情報の更新
+          if (msg.type === "newreadmessage") {
+            console.log("既読更新：", msg);
+            console.log("ルームID既読msg.roomId：",msg.roomId);
+            console.log("ルームID既読roomId：",roomId);
+            if (String(msg.roomId) !== roomId) {
+              console.log("ルームID既読：aaaaaaaaaaaa");
+              return;
+            }
+            console.log("ルームID既読：bbbbbbbbbbbbb");
+
+            interface SendMessages {
+              room_id: number;
+              message_id: number;
+              readcount: number;
+              allread: boolean;
+            }
+
+            // SendMessagesをMapに変換して高速アクセス
+            const sendMap = new Map<number, SendMessages>();
+            for (const sm of msg.newReadMessage) {
+              sendMap.set(sm.message_id, sm);
+            }
+            console.log("sendMap：",sendMap);
+
+            // messagesを上書きして新しい配列を返す
+            setMessages((prevMessages) =>
+              prevMessages.map(msglist => {
+                //console.log("Messages.mapスタート");
+                const readInfo = sendMap.get(msglist.id);
+                if (readInfo) {
+                  console.log("readInfo:", msglist.id, " > ", msglist.content, " > ", msglist.readcount);
+                  return {
+                    ...msglist,
+                    allread: readInfo.allread,
+                    readcount: readInfo.readcount
+                  };
+                }
+                return msglist;
+              })
+            );
+
+            return;
+          }
+
           // ✅ 通常のチャットメッセージのみ以下を実行
           if (!msg.id || !msg.content || typeof msg.content !== "string") {
             console.warn("⚠️ 無効なチャットメッセージ:", msg);
@@ -197,6 +249,7 @@ if (data && Array.isArray(data.messages)) {
             type: msg.content.includes("/uploads/") ? "image" : "text", // ✅ 自動判別でもOK
             content: msg.content,
             allread: msg.read ?? false,
+            readcount: msg.readcount,
           };
           setMessages((prev) => [...prev, newMessage]);
         } catch (err) {
@@ -220,6 +273,7 @@ if (data && Array.isArray(data.messages)) {
   // onClickから呼ばれる
   // テキスト送信
   const handleSendMessage = async () => {
+    console.log("xxxxxxxxxxxxxxxx:", messages);
     if (!message.trim()) {
       alert("メッセージを入力してください");
       return;
@@ -247,13 +301,18 @@ if (data && Array.isArray(data.messages)) {
       const response = await res.json();
       console.log("📨データ：", response);
       console.log("📨データ ID：", response.data.ID);
+      
+      const isOnlyEmoji = /^[\p{Emoji}]{1}$/u.test(message.trim());
+
       const savedMessage: Message = {
         id: response.data.ID,
         sender: loggedInUserid ?? 0,
         sendername: loggedInUser,
-        type: selectedFile ? "image" : "text", // ✅ ファイルがある＝画像
+        // type: selectedFile ? "image" : "text", // ✅ ファイルがある＝画像
+        type: isOnlyEmoji ? "emoji" : (selectedFile ? "image" : "text"),  // ← 追加
         content: message.trim(),
-        allread: false
+        allread: false,
+        readcount: 0,
       };
 
       // WebSocket送信
@@ -280,10 +339,6 @@ if (data && Array.isArray(data.messages)) {
 
   // ファイル送信
   const handleSubmit = async () => {
-
-    console.log("xxxxxxxxxxxxxxxx:", messages);
-
-
     if (!selectedFile) {
       alert("ファイルを選択してください");
       return;
@@ -322,7 +377,8 @@ if (data && Array.isArray(data.messages)) {
         sendername: loggedInUser,
         type: selectedFile ? "image" : "text", // ✅ ファイルがある＝画像
         content: response.image,
-        allread: false
+        allread: false,
+        readcount: 0,
       };
 
       // WebSocket送信
@@ -591,8 +647,20 @@ if (data && Array.isArray(data.messages)) {
                       ) : (
                         <>
                       
-                    {/* 本文 or 画像 */}
-                    {msg.content.startsWith("http") &&
+                    {/* 本文 or 画像 or 絵文字 */}
+                    {msg.type === "emoji" ? (
+                      <div
+                        style={{
+                          fontSize: "120px",          // 大きく
+                          textAlign: "center",
+                          padding: "10px 0",
+                          lineHeight: "1",
+                        }}
+                      >
+                        {msg.content}
+                      </div>
+                    ) : (
+                    msg.content.startsWith("http") &&
                       msg.content.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) ? (
                       <img
                         src={msg.content}
@@ -614,14 +682,14 @@ if (data && Array.isArray(data.messages)) {
                           fontStyle: msg.content === "（このメッセージは削除されました）" ? "italic" : "normal",
                         }}
                       >
-                        {msg.content}
+                        {msg.id} : {msg.content}
                       </div>
-                    )}
+                    ))}
                   </>
                 )}
                     {/* 既読 */}
                     {/* {msg.allread && isMyMessage && isOtherUserInRoomRef.current && ( */}
-                    {msg.allread ? (
+                    {/* {isMyMessage && ( */}
                       <div
                         style={{
                           fontSize: "11px",
@@ -631,11 +699,9 @@ if (data && Array.isArray(data.messages)) {
                           right: "10px",
                         }}
                       >
-                        既読
+                        既読( {msg.readcount} )
                       </div>
-                    ) : (
-                      <div></div>
-                    )}
+                    {/* )} */}
                     </div>
               
                   {/* ホバーメニュー */}
@@ -695,38 +761,85 @@ if (data && Array.isArray(data.messages)) {
             <p>メッセージがありません</p>
           )}
         </div>
-        <div style={{ display: "flex", gap: "10px" }}>
-          <div>
-            <input 
+                <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginTop: "15px",
+          position: "relative",
+          width: "100%"
+        }}>
+          {/* 左下：絵文字とファイル */}
+          <div style={{ display: "flex", gap: "10px" }}>
+            <button onClick={() => setShowEmojiPicker(prev => !prev)}>😊</button>
+            <input
               type="file"
               onChange={handleFileChange}
-              ref={fileInputRef} // Refを設定  
+              ref={fileInputRef}
+              style={{ fontSize: "13px" }}
             />
-            <button onClick={handleSubmit}>アップロード</button>
           </div>
+
+          {/* 中央：入力欄 */}
           <input
             type="text"
             placeholder="メッセージを入力"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            style={{ flex: 1, padding: "20px", borderRadius: "30px", border: "2px solid #ccc" }}
+            value={selectedFile ? selectedFile.name : message}
+            onChange={(e) => {
+              setMessage(e.target.value);
+              setSelectedFile(null); // テキスト入力されたらファイルリセット
+            }}
+            style={{
+              flex: 1,
+              margin: "0 10px",
+              padding: "16px",
+              borderRadius: "30px",
+              border: "2px solid #ccc"
+            }}
           />
-          <button onClick={handleSendMessage} style={{
+
+          {/* 右：送信 */}
+          <button onClick={() => {
+            if (selectedFile) {
+              handleSubmit(); // ファイル送信
+            } else {
+              handleSendMessage(); // テキスト送信
+            }
+          }} style={{
             fontSize: "15px",
             backgroundColor: "#388e3c",
             color: "#fff",
-            padding: "10px 30px",
+            padding: "10px 25px",
             borderRadius: "30px",
             border: "none",
-            cursor: "pointer",
-            transition: "all 0.3s"
-          }}>送信</button>
+            cursor: "pointer"
+          }}>
+            送信
+          </button>
+
+          {/* Emoji Picker ポップアップ */}
+          {showEmojiPicker && (
+            <div style={{
+              position: "absolute",
+              bottom: "60px",
+              left: "0px",
+              zIndex: 100
+            }}>
+              <EmojiPicker
+                onEmojiClick={(emojiData) => {
+                  setMessage(prev => prev + emojiData.emoji);
+                  setShowEmojiPicker(false);
+                }}
+              />
+            </div>
+          )}
         </div>
           <footer style={{ marginTop: "20px", textAlign: "center" }}>
-            <Link href="/roomSelect" style={{ color: "#388e3c", marginRight: "10px" }}>戻る →</Link>
+            <Link href="/roomSelect" style={{ color: "#388e3c", marginRight: "10px" }}>← 戻る</Link>
           </footer>
       </div>
-    </div>
+      </div>
+
   );
 };
 
