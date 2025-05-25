@@ -43,6 +43,7 @@ func main() {
 	http.HandleFunc("/read", handlers.MarkMessageAsRead)
 
 	// メッセージ削除、編集
+	http.HandleFunc("/deleteOnlyMessage", handlers.DeleteOnlyMessageHandler)
 	http.HandleFunc("/deleteMessage", handlers.DeleteMessageHandler)
 	http.HandleFunc("/editMessage", handlers.EditMessageHandler)
 

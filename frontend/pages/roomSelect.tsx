@@ -367,6 +367,7 @@ export default function RoomSelect() {
     localStorage.removeItem("token");
     alert("ログアウトしました");
     router.push("/top");
+    //socket.close();
   };
 
   return (

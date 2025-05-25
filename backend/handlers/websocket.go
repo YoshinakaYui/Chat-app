@@ -11,7 +11,7 @@ import (
 )
 
 type IncomingMessage struct {
-	RoomID     int    `json:"id"`
+	MessageID  int    `json:"id"`
 	SenderID   int    `json:"sender"`
 	SenderName string `json:"sendername"`
 	Content    string `json:"content"`
@@ -53,6 +53,11 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		log.Println("WebSocket接続エラー:", err)
 		return
 	}
+	defer func() {
+		log.Println("🛑 WebSocket切断:", ws.RemoteAddr())
+		ws.Close()
+		delete(clients, ws)
+	}()
 	//defer ws.Close()
 
 	// クライアントをmapに追加
@@ -67,7 +72,7 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			fmt.Println("受信エラー:", err)
 			delete(clients, ws)
-			continue
+			break
 		}
 
 		str := string(msg)
@@ -113,43 +118,6 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// for {
-	// 	log.Println("🟦：あいうえお")
-
-	// 	// ① Joinイベントかどうかを判定して処理
-	// 	var join JoinEvent
-	// 	if err := json.Unmarshal(msg, &join); err == nil && join.Type == "join" {
-	// 		log.Printf("🟦： ユーザー %d がルーム %d に入室", join.UserID, join.RoomID)
-
-	// 		// 入室通知を他のクライアントへブロードキャスト
-	// 		joinBroadcast := map[string]interface{}{
-	// 			"type":   "user_joined",
-	// 			"userId": join.UserID,
-	// 			"roomId": join.RoomID,
-	// 		}
-	// 		joinJSON, _ := json.Marshal(joinBroadcast)
-	// 		broadcast <- joinJSON
-	// 		continue // join処理は終わったので次へ
-	// 	}
-
-	// 	// ② 通常のチャットメッセージ処理
-	// 	var incoming IncomingMessage
-	// 	if err := json.Unmarshal(msg, &incoming); err != nil {
-	// 		fmt.Println("JSON解析エラー:", err)
-	// 		continue
-	// 	}
-
-	// 	log.Println("🟦：", incoming)
-
-	// 	outJSON, err := json.Marshal(incoming)
-	// 	if err != nil {
-	// 		fmt.Println("JSON変換エラー:", err)
-	// 		continue
-	// 	}
-
-	// 	// 皆にメッセージを送信（ブロードキャスト）
-	// 	broadcast <- outJSON
-	// }
 }
 
 // ブロードキャスト処理

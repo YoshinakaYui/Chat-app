@@ -26,7 +26,7 @@ func MessageHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		handleSendMessage(w, r)
-	case http.MethodGet:
+	case http.MethodPut:
 		handleGetMessages(w, r)
 	case http.MethodOptions:
 		w.WriteHeader(http.StatusOK)
@@ -72,6 +72,23 @@ func handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 🟣メッセージを他のクライアントへブロードキャスト
+	sendBroadcast := map[string]interface{}{
+		"type":        "postmessage",
+		"postmessage": message,
+	}
+	sendJSON, _ := json.Marshal(sendBroadcast)
+	log.Println("NNN：", sendJSON)
+
+	var decoded map[string]interface{}
+	err2 := json.Unmarshal(sendJSON, &decoded)
+	if err2 != nil {
+		log.Println("JSONデコード失敗:", err2)
+	}
+	log.Println("PPP：", decoded)
+
+	broadcast <- sendJSON
+
 	log.Println("🟣：", message)
 
 	// 成功レスポンス
@@ -102,6 +119,18 @@ func handleGetMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var user struct {
+		Userid int `json:"login_id"`
+	}
+
+	//utils.JsonRawDataDisplay(w, r)
+
+	// リクエストボディのデコード
+	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+		http.Error(w, "リクエスト形式が不正", http.StatusBadRequest)
+		return
+	}
+
 	// メッセージを格納するスライス
 	// var SendMessages []struct {
 	// 	MessageID  int    `json:"message_id"`
@@ -122,47 +151,107 @@ func handleGetMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var messages []SendMessages
-	// メッセージをデータベースから取得する
-	// result := db.DB.Table("messages AS m"). // messagesを検索対象にする
-	// メッセージID、内容、作成時間、送信者ID、送信者名をセレクト
-	// Select("m.id AS message_id, COALESCE(a.file_name, m.content) AS content, m.created_at, m.sender_id, u.username AS sender_name").
-	// Joins("JOIN users AS u ON m.sender_id = u.id").
-	// Joins("LEFT JOIN message_attachments AS a ON m.id = a.message_id").
-	// Where("m.room_id = ?", roomID).
-	// Order("created_at ASC").
-	// Find(&SendMessages)
+
+	// result := db.DB.Table("messages AS m").
+	// 	Select(`
+	// 		m.id AS message_id,
+	// 		COALESCE(a.file_name, m.content) AS content,
+	// 		m.created_at,
+	// 		m.sender_id AS sender,
+	// 		u.username AS sendername,
+	// 		COUNT(DISTINCT mr.user_id) = COUNT(DISTINCT rm.user_id) AS allread,
+	// 		COUNT(DISTINCT mr.user_id) AS readcount`).
+	// 	Joins("JOIN users AS u ON m.sender_id = u.id").
+	// 	Joins("LEFT JOIN message_attachments AS a ON m.id = a.message_id").
+	// 	Joins("JOIN room_members AS rm ON m.room_id = rm.room_id").
+	// 	Joins("LEFT JOIN message_reads AS mr ON mr.message_id = m.id AND mr.user_id = rm.user_id").
+	// 	Where("m.room_id = ?", roomID).
+	// 	Group("m.id, a.file_name, m.content, m.created_at, m.sender_id, u.username").
+	// 	Order("m.created_at ASC").
+	// 	Scan(&messages)
 
 	result := db.DB.Table("messages AS m").
 		Select(`
-			m.id AS message_id,
-			COALESCE(a.file_name, m.content) AS content,
-			m.created_at,
-			m.sender_id AS sender,
-			u.username AS sendername,
-			COUNT(DISTINCT mr.user_id) = COUNT(DISTINCT rm.user_id) AS allread, 
-			COUNT(DISTINCT mr.user_id) AS readcount`).
+		m.id AS message_id,
+		COALESCE(a.file_name, m.content) AS content,
+		m.created_at,
+		m.sender_id AS sender,
+		u.username AS sendername,
+		COUNT(DISTINCT mr.user_id) = COUNT(DISTINCT rm.user_id) AS allread,
+		COUNT(DISTINCT mr.user_id) AS readcount`).
 		Joins("JOIN users AS u ON m.sender_id = u.id").
 		Joins("LEFT JOIN message_attachments AS a ON m.id = a.message_id").
 		Joins("JOIN room_members AS rm ON m.room_id = rm.room_id").
 		Joins("LEFT JOIN message_reads AS mr ON mr.message_id = m.id AND mr.user_id = rm.user_id").
 		Where("m.room_id = ?", roomID).
+		Where("m.content NOT LIKE ?", "DeleteOnlyMessage:%").
 		Group("m.id, a.file_name, m.content, m.created_at, m.sender_id, u.username").
 		Order("m.created_at ASC").
 		Scan(&messages)
 
 	//log.Println("🟣ルームメッセージ一覧：", messages)
 
-	// エラー処理
+	//エラー処理
 	if result.Error != nil {
 		log.Println("メッセージ取得エラー:", result.Error)
 		http.Error(w, "メッセージが見つかりません", http.StatusNotFound)
 		return
 	}
 
+	type Message struct {
+		ID               int
+		Content          string
+		CreatedAt        time.Time
+		SenderID         int
+		DeletedMessageID string `gorm:"column:deleted_message_id"`
+	}
+
+	var deletemessages []Message
+
+	err1 := db.DB.Table("messages").
+		Select(`
+			messages.*,
+			SUBSTRING(content, LENGTH('DeleteOnlyMessage:') + 1) AS deleted_message_id
+		`).
+		Where("room_id = ?", roomID).
+		Where("sender_id = ?", user.Userid).
+		Where("content LIKE ?", "DeleteOnlyMessage:%").
+		Scan(&deletemessages).Error
+
+	if err1 != nil {
+		log.Println("DBエラー:", err1)
+	}
+
+	// 2. IDの配列を作る
+	var deletedIDs []int
+	for _, d := range deletemessages {
+		var delmsgid, err3 = strconv.Atoi(d.DeletedMessageID)
+
+		if err3 != nil {
+			log.Println("DBエラー:", err3)
+		}
+		deletedIDs = append(deletedIDs, delmsgid)
+	}
+
+	filtered := make([]SendMessages, 0)
+	for _, msg := range messages {
+		found := false
+		for _, delID := range deletedIDs {
+			if msg.MessageID == delID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			filtered = append(filtered, msg)
+		}
+	}
+
 	// JSONレスポンス
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":   "success",
-		"messages": messages,
+		"status": "success",
+		// "messages": messages,
+		"messages": filtered,
 	})
 	//log.Println("🟣ルームメッセージ一覧xxxxxx：", messages)
 
@@ -259,7 +348,17 @@ func UpdataMessageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// unreadIDsのメッセージのallreadとreadcountをwebsocketに送信
+	BroadcastReadCountsToRoom(msg.RoomID, unreadIDs)
 
+	log.Println("KK：", unreadIDs)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":        "success",
+		"message":       "既読完了",
+		"readMessageID": unreadIDs,
+	})
+}
+
+func BroadcastReadCountsToRoom(roomID int, unreadIDs []int) {
 	type SendMessages struct {
 		RoomID    int  `json:"room_id" gorm:"column:room_id"`
 		MessageID int  `json:"message_id" gorm:"column:message_id"`
@@ -278,7 +377,7 @@ func UpdataMessageHandler(w http.ResponseWriter, r *http.Request) {
 				`).
 			Joins("JOIN room_members rm ON m.room_id = rm.room_id").
 			Joins("LEFT JOIN message_reads r ON m.id = r.message_id AND rm.user_id = r.user_id").
-			Where("m.room_id = ? AND m.id IN ?", msg.RoomID, unreadIDs). // messageIDsは[]uintや[]intのスライス
+			Where("m.room_id = ? AND m.id IN ?", roomID, unreadIDs). // messageIDsは[]uintや[]intのスライス
 			Group("m.id").
 			Order("m.created_at ASC").
 			Scan(&result)
@@ -290,31 +389,25 @@ func UpdataMessageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(result) != 0 {
-		// 入室通知を他のクライアントへブロードキャスト
+		// 既読を他のクライアントへブロードキャスト
 		joinBroadcast := map[string]interface{}{
 			"type":           "newreadmessage",
 			"newReadMessage": result,
-			"roomId":         msg.RoomID,
+			"roomId":         roomID,
 		}
 		joinJSON, _ := json.Marshal(joinBroadcast)
-		log.Println("NNN：", joinJSON)
+		//log.Println("NNN：", joinJSON)
 
 		var decoded map[string]interface{}
 		err2 := json.Unmarshal(joinJSON, &decoded)
 		if err2 != nil {
-			log.Println("JSONデコード失敗:", err)
+			log.Println("JSONデコード失敗:", err2)
 		}
 		log.Println("PPP：", decoded)
 
 		broadcast <- joinJSON
 	}
 
-	log.Println("KK：", unreadIDs)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":        "success",
-		"message":       "既読完了",
-		"readMessageID": unreadIDs,
-	})
 }
 
 // ファイル送受信処理
@@ -417,6 +510,26 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "ファイル保存失敗", http.StatusInternalServerError)
 		return
 	}
+
+	// 🟣ファイルを他のクライアントへブロードキャスト
+
+	message.Content = fileURL
+
+	sendBroadcast := map[string]interface{}{
+		"type":        "postmessage",
+		"postmessage": message,
+	}
+	sendJSON, _ := json.Marshal(sendBroadcast)
+	log.Println("NNN：", sendJSON)
+
+	var decoded map[string]interface{}
+	err2 := json.Unmarshal(sendJSON, &decoded)
+	if err2 != nil {
+		log.Println("JSONデコード失敗:", err2)
+	}
+	log.Println("PPP：", decoded)
+
+	broadcast <- sendJSON
 
 	log.Println("🟠SendFileHandler：エンド")
 
