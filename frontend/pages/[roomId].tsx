@@ -2,7 +2,9 @@ import { useRouter } from "next/router";
 import React from "react";
 import { useState, useEffect, useRef } from "react";
 import { createWebSocket } from "../utils/websocket";
+import EmojiPicker from 'emoji-picker-react';
 import Link from "next/link";
+import { TbXxx } from "react-icons/tb";
 
 //import styles from "@/styles/Home.module.css";
 
@@ -10,9 +12,10 @@ interface Message {
   id: number;
   sender: number;
   sendername : string | null;
-  type: "text" | "image"; // ★ここで区別！
+  type: "text" | "image";
   content: string;
   allread: boolean; // 既読状態を追跡するフラグ
+  readcount: number;
 }
 
 const ChatRoom = () => {
@@ -39,8 +42,9 @@ const ChatRoom = () => {
   const [editingId, setEditingId] = useState<number | null>(null); // 編集中のメッセージID
   const [isEditing, setIsEditing] = useState(false);  
   const [editText, setEditText] = useState<string>(""); // 編集中の内容
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false); // 絵文字
 
-
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     // 下までスクロール
@@ -49,7 +53,18 @@ const ChatRoom = () => {
 
 
 useEffect(() => {
+  //let ws: WebSocket;
   const setupChat = async () => {
+    console.log("setupChat開始")
+    console.log("現在の wsRef:", wsRef.current) 
+    if (wsRef.current) {
+      console.log("⚠️ WebSocketが既に存在しています");
+      return;
+    }
+    const ws = new WebSocket("ws://localhost:8080/ws");
+    wsRef.current = ws; // ✅ useRefで管理
+    setSocket(ws);
+
     try {
       // --- ローカルストレージから取得 ---
       const token = localStorage.getItem("token");
@@ -69,7 +84,13 @@ useEffect(() => {
       setLoggedInUserid(userid);
 
       // --- WebSocket初期化 ---
-      const ws = new WebSocket("ws://localhost:8080/ws");
+      // const ws = new WebSocket("ws://localhost:8080/ws");
+      // ✅ WebSocket初期化
+      // console.log("WebSocket初期化");
+      // const ws = new WebSocket("ws://localhost:8080/ws");
+      // wsRef.current = ws; // useRefに保持
+      // setSocket(ws);      // 既存のステートも更新（必要なら）
+
 
       // Socket Open時のイベント
       ws.onopen = async () => {
@@ -89,22 +110,28 @@ useEffect(() => {
         
 
         // ✅ メッセージ履歴取得
-        const res = await fetch(`http://localhost:8080/getRoomMessages?room_id=${roomId}`);
-        // console.log("生データ：", res.json);
+        const res = await fetch(`http://localhost:8080/getRoomMessages?room_id=${roomId}`,{
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
+          body: JSON.stringify({ login_id: userid}),
+        });
+
         const data = await res.json();
         console.log("😭",data.messages);
-        //console.log("メッセージID：", data.messages[0]?.id);
-        
-        // console.log(JSON.stringify(data, null, 2));
+        setMessages(data.messages);
+        //console.log("😭2",messages);
 
-        setMessages(data.messages); // BUG ← isRead が true になってる
+        
 
         // ✅ nullチェック追加！
-if (data && Array.isArray(data.messages)) {
-  setMessages(data.messages);
-} else {
-  setMessages([]); // nullや不正な値の場合は空配列
-}
+        if (data && Array.isArray(data.messages)) {
+          setMessages(data.messages);
+        } else {
+          setMessages([]); // nullや不正な値の場合は空配列
+        }
 
         // とりあえずコメント
         // if (data && Array.isArray(data.messages)) {
@@ -119,6 +146,7 @@ if (data && Array.isArray(data.messages)) {
         //   console.log("🔍 formatted:", formatted);
         //   setMessages(formatted);
         // }
+
 
         // ✅ 一括既読更新（画面表示された履歴分）
         console.log("FFFFF");
@@ -136,7 +164,7 @@ if (data && Array.isArray(data.messages)) {
         const markResult = await markRes.json();
         if (markRes.ok) {
           console.log("✅ 履歴既読化成功:", markResult);
-          setMessages((prev) => prev.map((msg) => ({ ...msg, allread: true })));
+          //setMessages((prev) => prev.map((msg) => ({ ...msg, allread: true })));  // この行で、allreadが全てtrueに上書きされる！
         }
       };
 
@@ -149,56 +177,133 @@ if (data && Array.isArray(data.messages)) {
           //✅ user_joined メッセージは無視（または通知として別処理）
           if (msg.type === "user_joined") {
             console.log("👥 入室通知イベントを受信:", msg.userId);
-          // ✅ 自分以外が入室してきたときに true にする
-          if (Number(msg.userId) !== Number(userid)) {
-            isOtherUserInRoomRef.current = true;
-            setIsOtherUserInRoom(true);
-            //console.log("✅ 他のユーザーが入室：isOtherUserInRoom = true");
-            console.log("✅ isOtherUserInRoom = ",isOtherUserInRoom);
+
+            // ✅ 自分以外が入室してきたときに true にする
+            if (Number(msg.userId) !== Number(userid)) {
+              isOtherUserInRoomRef.current = true;
+              setIsOtherUserInRoom(true);
+              //console.log("✅ 他のユーザーが入室：isOtherUserInRoom = true");
+              console.log("✅ isOtherUserInRoom = ",isOtherUserInRoom);
+            }
+            return;
           }
-          return;
-        }
+
+          // 新しいメッセージの既読情報の更新
+          if (msg.type === "newreadmessage") {
+            console.log("既読更新：", msg);
+            if (String(msg.roomId) !== roomId) {
+              return;
+            }
+
+            interface SendMessages {
+              room_id: number;
+              message_id: number;
+              readcount: number;
+              allread: boolean;
+            }
+
+            // SendMessagesをMapに変換して高速アクセス
+            const sendMap = new Map<number, SendMessages>();
+            for (const sm of msg.newReadMessage) {
+              sendMap.set(sm.message_id, sm);
+            }
+            console.log("sendMap：",sendMap);
+
+            // messagesを上書きして新しい配列を返す
+            setMessages((prevMessages) =>
+              prevMessages.map(msglist => {
+                console.log("Messages.mapスタート ");
+                const readInfo = sendMap.get(msglist.id);
+                if (readInfo) {
+                  console.log("readInfo:", msglist.id, " > ", msglist.content, " > ", msglist.readcount);
+                  return {
+                    ...msglist,
+                    allread: readInfo.allread,
+                    readcount: readInfo.readcount
+                  };
+                }
+                return msglist;
+              })
+            );
+
+            return;
+          }
+
+          if(msg.type === "updataMessage"){
+            console.log("編集を共有")
+            if (String(msg.roomId) !== roomId) {
+              console.log("ルームID既読：aaaaaaaaaaaa");
+              return;
+            }
+            setMessages((prevMessages) =>
+              prevMessages.map(msglist => {
+                console.log("Messages.mapスタート");
+                if(msglist.id === msg.messageid){
+                  return{
+                    ...msglist,
+                    content: msg.content
+                  }
+                }
+                return msglist;
+              })
+            );
+            return
+          }
+          
+          console.log("setupChat-2")
+          console.log("現在の wsRef-2:", wsRef.current) 
           // ✅ 通常のチャットメッセージのみ以下を実行
-          if (!msg.id || !msg.content || typeof msg.content !== "string") {
+          if (!msg.postmessage.ID){
+            console.log("msg.id：エラー");
+          }
+          if(!msg.postmessage.Content){
+            console.log("msg.content：エラー");
+          }
+          if(typeof msg.postmessage.Content !== "string"){
+            console.log("typeof msg.content：エラー");
+          }
+          if (!msg.postmessage.ID || !msg.postmessage.Content || typeof msg.postmessage.Content !== "string") {
             console.warn("⚠️ 無効なチャットメッセージ:", msg);
             return;
           }        
-          console.log("👤：",msg.sender, userid);
+          console.log("👤：",msg.postmessage.SenderID, userid);
 
-          if (Number(msg.sender) === Number(userid)) {
-            console.log("☀️ 自分のメッセージなのでスキップ");
+          if (Number(msg.postmessage.RoomID) !== Number(roomId)) {
+            console.log("☀️ ルームIDが違うので、メッセージを無視");
             return;
           }
-
-          // ✅ 既読リクエスト（自分のメッセージは除外）
-          if (Number(msg.sender) !== Number(userid)) {
-            const res = await fetch(`http://localhost:8080/read`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${token}`,
-              },
-              body: JSON.stringify({ login_id: userid, msg_id: msg.id }),
-            });
-            if (!res.ok) {
-              throw new Error("未読一覧取得失敗");
-            }
-
-            const data = await res.json();
-            console.log("PP：",data.data.MessageID);  // エラー、undefind
-          } 
 
 
           // ✅ 表示に追加
           const newMessage: Message = {
-            id: msg.id,
-            sender: msg.sender,
-            sendername: msg.sendername,
-            type: msg.content.includes("/uploads/") ? "image" : "text", // ✅ 自動判別でもOK
-            content: msg.content,
-            allread: msg.read ?? false,
+            id: msg.postmessage.ID,
+            sender: msg.postmessage.SenderID,
+            sendername: msg.postmessage.sendername,
+            type: msg.postmessage.Content.includes("/uploads/") ? "image" : "text", // ✅ 自動判別でもOK
+            content: msg.postmessage.Content,
+            allread: false,
+            readcount: 1,
           };
           setMessages((prev) => [...prev, newMessage]);
+
+
+          // ✅ 既読リクエスト（自分のメッセージは除外
+          const res = await fetch(`http://localhost:8080/read`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`,
+            },
+            body: JSON.stringify({ login_id: userid, msg_id: msg.postmessage.ID, room_id: roomId}),
+          });
+          if (!res.ok) {
+            throw new Error("未読一覧取得失敗");
+          }
+
+          const data = await res.json();
+          console.log("PP：",data.data.MessageID);  // エラー、undefind
+
+
         } catch (err) {
           console.error("❌ WebSocket受信処理エラー:", err);
         };
@@ -213,13 +318,22 @@ if (data && Array.isArray(data.messages)) {
   if (roomId) {
     setupChat();
   }
-}, [roomId]);
 
-//console.log("😢：", messages[0]?.id); // undefined
+  // ✅ クリーンアップ処理で WebSocket を確実に閉じる
+  return () => {
+    if (wsRef.current) {
+      console.log("🛑 WebSocketクローズします");
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+  };
+// }, [roomId]);
+}, []);
 
   // onClickから呼ばれる
   // テキスト送信
   const handleSendMessage = async () => {
+    console.log("xxxxxxxxxxxxxxxx:", messages);
     if (!message.trim()) {
       alert("メッセージを入力してください");
       return;
@@ -247,22 +361,26 @@ if (data && Array.isArray(data.messages)) {
       const response = await res.json();
       console.log("📨データ：", response);
       console.log("📨データ ID：", response.data.ID);
+      
+      //const isOnlyEmoji = /^[\p{Emoji}]{1}$/u.test(message.trim());
+
       const savedMessage: Message = {
         id: response.data.ID,
         sender: loggedInUserid ?? 0,
         sendername: loggedInUser,
         type: selectedFile ? "image" : "text", // ✅ ファイルがある＝画像
         content: message.trim(),
-        allread: false
+        allread: false,
+        readcount: 0,
       };
 
       // WebSocket送信
-      console.log("sockect：",savedMessage);
-      if (socket) {
-        socket.send(JSON.stringify(savedMessage));
-      }
+      // console.log("sockect：",savedMessage);
+      // if (socket) {
+      //   socket.send(JSON.stringify(savedMessage));
+      // }
 
-      setMessages((prev) => [...prev, savedMessage]);
+      // setMessages((prev) => [...prev, savedMessage]);
       setMessage("");
     } catch (err) {
       alert("メッセージ送信エラー");
@@ -280,10 +398,6 @@ if (data && Array.isArray(data.messages)) {
 
   // ファイル送信
   const handleSubmit = async () => {
-
-    console.log("xxxxxxxxxxxxxxxx:", messages);
-
-
     if (!selectedFile) {
       alert("ファイルを選択してください");
       return;
@@ -316,22 +430,7 @@ if (data && Array.isArray(data.messages)) {
 
       console.log("📨データ：", response);
       console.log("📨データ ID：", response.data.ID);
-      const savedMessage: Message = {
-        id: response.data.ID,
-        sender: loggedInUserid ?? 0,
-        sendername: loggedInUser,
-        type: selectedFile ? "image" : "text", // ✅ ファイルがある＝画像
-        content: response.image,
-        allread: false
-      };
 
-      // WebSocket送信
-      console.log("sockect：",savedMessage);
-      if (socket) {
-        socket.send(JSON.stringify(savedMessage));
-      }
-
-      setMessages((prev) => [...prev, savedMessage]);
       setMessage("");
       
       // ファイル選択をクリア
@@ -353,31 +452,12 @@ if (data && Array.isArray(data.messages)) {
     isOwnMessage: boolean;
   };
 
-  type ChatMessageProps = {
-    messageaction: MessageAction;
-    onUpdate: (id: string, newText: string) => void;
-    onDelete: (id: string) => void;
-  };
-
-  // const ChatMessage: React.FC<{
+  // type ChatMessageProps = {
   //   messageaction: MessageAction;
-  //   onUpdate: (id: string, newTsxt: string) => void;
+  //   onUpdate: (id: string, newText: string) => void;
   //   onDelete: (id: string) => void;
-  // }> = ({messageaction, onUpdate, onDelete}) => {
-  //   // const [isEditing, setIsEditing] = useState(false);
-  //   // const [editText, setEditText] = useState(messageaction.text);
-  //   // const [hovered, setHovered] = useState(false);
-  // }
-  // console.log(ChatMessage);
-
-  // const handleSave = () => {
-  //   if(editText.trim()!==""){
-  //     onUpdate(messageaction.id, editText);
-  //     setIsEditing(false);
-  //   }
   // };
 
-  //const [hovered, setHovered] = useState(false);
 
   //リアクション
   const handleReact = (id: number) => {
@@ -401,7 +481,7 @@ if (data && Array.isArray(data.messages)) {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({content: editText}),
+        body: JSON.stringify({content: editText, room_id: roomId}),
       });
       console.log("-----3：", hoveredMessage);
 
@@ -417,47 +497,30 @@ if (data && Array.isArray(data.messages)) {
     }
   }
 
-  
-
-
-  // 削除 と 取り消し //(msg)?
-  const handleDelete = async (id: number) => {
-    const hoveredMessage = messages.find(msg => msg.id === hoveredMessageId);
-    console.log("-----：", hoveredMessageId);
-    console.log("メッセージID📝：", hoveredMessage);
-  
-    console.log("削除：", id);
+  const handleOnlyDelete = async (id: number) => {
+    console.log("メッセージ削除📝：", id);
     const confirmed = window.confirm("このメッセージを削除しますか？");
     if (!confirmed) return;
     
-    // 削除処理の実装へ
+
+    // messagesaから該当メッセージの削除
+    setMessages(messages.filter(msg => msg.id !== id));
+
+
+    // 送信取消処理の実装へ
     try{
-      const res = await fetch(`http://localhost:8080/deleteMessage?id=${id}`, { // id = message.id
-        method: "DELETE",
+      const res = await fetch(`http://localhost:8080/deleteOnlyMessage?id=${id}`, { // id = message.id
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ login_id: loggedInUserid,room_id: roomId}),
       });
-        if (!res.ok) {
+      if (!res.ok) {
           throw new Error("削除失敗");
         } else {
           alert("メッセージを削除しました");
         }
-        // onDelete(id); // ローカル状態から削除
-        // setMessages((prev) => prev.filter((msg) => msg.id !== id));
-
-        // const deletedMessage = messages.find((msg) => msg.id === id);
-        // // 1. 削除対象を取り除く
-        // setMessages((prev) => prev.filter((msg) => msg.id !== id));
-        // // 2. 削除ログメッセージを新しく追加
-        // if (deletedMessage) {
-        //   const logMsg = {
-        //     id: Date.now(), // 仮のID
-        //     sender: 0, // システムメッセージ的な扱い
-        //     sendername: null,
-        //     type: "text",
-        //     content: `${deletedMessage.sendername ?? "ユーザー"}がメッセージを削除しました`,
-        //     allread: true,
-        //   };
-          //setMessages((prev) => [...prev, logMsg]);
-
               // ✅ メッセージを「削除済み表示」に差し替える
           setMessages((prev) =>
             prev.map((msg) =>
@@ -476,6 +539,53 @@ if (data && Array.isArray(data.messages)) {
       } catch (err) {
         alert("削除できませんでした");
         console.error("削除エラー：", err);
+      }
+
+  }
+  
+
+
+  // 削除 と 取り消し //(msg)?
+  const handleDelete = async (id: number) => {
+    const hoveredMessage = messages.find(msg => msg.id === hoveredMessageId);
+    console.log("メッセージ送信取消📝：", hoveredMessage);
+  
+    console.log("送信取消：", id);
+    const confirmed = window.confirm("このメッセージを送信取消しますか？");
+    if (!confirmed) return;
+    
+    // 送信取消処理の実装へ
+    try{
+      const res = await fetch(`http://localhost:8080/deleteMessage?id=${id}`, { // id = message.id
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({room_id: roomId}),
+      });
+      if (!res.ok) {
+          throw new Error("送信取消失敗");
+        } else {
+          alert("メッセージを送信取消しました");
+        }
+              // ✅ メッセージを「削除済み表示」に差し替える
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === id
+                ? {
+                    ...msg,
+                    content: "（このメッセージは削除されました）",
+                    type: "text", // 念のため
+                  }
+                : msg
+            )
+          );
+
+          console.log(`🗑️ メッセージ${id}を送信取消しました`);
+      
+      } catch (err) {
+        alert("送信取消できませんでした");
+        console.error("送信取消エラー：", err);
       }
 
   };
@@ -518,7 +628,7 @@ if (data && Array.isArray(data.messages)) {
                   onMouseEnter={() => {
                     hoverTimeoutRef.current = setTimeout(() => {
                       setHoveredMessageId(msg.id);
-                    }, 1000); // 1000ms待って表示
+                    }, 700); // 1000ms待って表示
                   }}
                   onMouseLeave={() => {
                     if (hoverTimeoutRef.current) {
@@ -614,14 +724,14 @@ if (data && Array.isArray(data.messages)) {
                           fontStyle: msg.content === "（このメッセージは削除されました）" ? "italic" : "normal",
                         }}
                       >
-                        {msg.content}
+                        {msg.id} : {msg.content}
                       </div>
                     )}
                   </>
                 )}
                     {/* 既読 */}
                     {/* {msg.allread && isMyMessage && isOtherUserInRoomRef.current && ( */}
-                    {msg.allread ? (
+                    {isMyMessage && (
                       <div
                         style={{
                           fontSize: "11px",
@@ -631,12 +741,11 @@ if (data && Array.isArray(data.messages)) {
                           right: "10px",
                         }}
                       >
-                        既読
+                        {msg.allread ? "全員既読" : `既読 (${msg.readcount})`}
+                        {/* `既読 (${msg.readcount, -1, 0})`}　← これにしたら、リアルタイム反映が無くなる */}
                       </div>
-                    ) : (
-                      <div></div>
                     )}
-                    </div>
+                  </div>
               
                   {/* ホバーメニュー */}
                   {hoveredMessageId === msg.id && (
@@ -669,12 +778,16 @@ if (data && Array.isArray(data.messages)) {
                             setEditText(msg.content);
                           }}
                           >編集</span>
-
                           <span
                           style={{
                             fontSize: "13px",
                           }}
-                          onClick={() => handleDelete(msg.id)}>削除</span>
+                          onClick={() => handleOnlyDelete(msg.id)}>削除</span>
+                          <span
+                          style={{
+                            fontSize: "13px",
+                          }}
+                          onClick={() => handleDelete(msg.id)}>送信取消</span>
                         </>
                       ) : (
                         <span 
@@ -695,38 +808,85 @@ if (data && Array.isArray(data.messages)) {
             <p>メッセージがありません</p>
           )}
         </div>
-        <div style={{ display: "flex", gap: "10px" }}>
-          <div>
-            <input 
+                <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginTop: "15px",
+          position: "relative",
+          width: "100%"
+        }}>
+          {/* 左下：絵文字とファイル */}
+          <div style={{ display: "flex", gap: "10px" }}>
+            <button onClick={() => setShowEmojiPicker(prev => !prev)}> ☺︎ </button>
+            <input
               type="file"
               onChange={handleFileChange}
-              ref={fileInputRef} // Refを設定  
+              ref={fileInputRef}
+              style={{ fontSize: "13px" }}
             />
-            <button onClick={handleSubmit}>アップロード</button>
           </div>
+
+          {/* 中央：入力欄 */}
           <input
             type="text"
             placeholder="メッセージを入力"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            style={{ flex: 1, padding: "20px", borderRadius: "30px", border: "2px solid #ccc" }}
+            value={selectedFile ? selectedFile.name : message}
+            onChange={(e) => {
+              setMessage(e.target.value);
+              setSelectedFile(null); // テキスト入力されたらファイルリセット
+            }}
+            style={{
+              flex: 1,
+              margin: "0 10px",
+              padding: "16px",
+              borderRadius: "30px",
+              border: "2px solid #ccc"
+            }}
           />
-          <button onClick={handleSendMessage} style={{
+
+          {/* 右：送信 */}
+          <button onClick={() => {
+            if (selectedFile) {
+              handleSubmit(); // ファイル送信
+            } else {
+              handleSendMessage(); // テキスト送信
+            }
+          }} style={{
             fontSize: "15px",
             backgroundColor: "#388e3c",
             color: "#fff",
-            padding: "10px 30px",
+            padding: "10px 25px",
             borderRadius: "30px",
             border: "none",
-            cursor: "pointer",
-            transition: "all 0.3s"
-          }}>送信</button>
+            cursor: "pointer"
+          }}>
+            送信
+          </button>
+
+          {/* Emoji Picker ポップアップ */}
+          {showEmojiPicker && (
+            <div style={{
+              position: "absolute",
+              bottom: "60px",
+              left: "0px",
+              zIndex: 100
+            }}>
+              <EmojiPicker
+                onEmojiClick={(emojiData) => {
+                  setMessage(prev => prev + emojiData.emoji);
+                  setShowEmojiPicker(false);
+                }}
+              />
+            </div>
+          )}
         </div>
           <footer style={{ marginTop: "20px", textAlign: "center" }}>
-            <Link href="/roomSelect" style={{ color: "#388e3c", marginRight: "10px" }}>戻る →</Link>
+            <Link href="/roomSelect" style={{ color: "#388e3c", marginRight: "10px" }}>← 戻る</Link>
           </footer>
       </div>
-    </div>
+      </div>
+
   );
 };
 
