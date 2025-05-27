@@ -89,7 +89,7 @@ func GetPersonalRoomsHandlers(w http.ResponseWriter, r *http.Request) {
 
 // グループルーム一覧を取得するハンドラー
 func GetGroupRoomsHandlers(w http.ResponseWriter, r *http.Request) {
-	log.Println("🟡GetGroupRoomsHandlers")
+	log.Println("🟣🟣GetGroupRoomsHandlers")
 
 	utils.EnableCORS(w)
 
@@ -111,13 +111,16 @@ func GetGroupRoomsHandlers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//log.Println("🟣🟣", req)
+
 	rooms, err := db.GetMyGroupRooms(req.LoggedInUserID)
 	if err != nil {
 		log.Println("ルーム一覧取得エラー:", err)
 		http.Error(w, "ルーム一覧の取得に失敗しました", http.StatusInternalServerError)
 		return
 	}
-	log.Println("🟣", rooms)
+	//log.Println("🟣🟣", rooms)
+	//log.Println("🟣🟣mentions：", mentions)
 	// レスポンスを返す
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

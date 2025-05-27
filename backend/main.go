@@ -40,6 +40,9 @@ func main() {
 	http.HandleFunc("/sendFile", handlers.UploadHandler)
 	http.HandleFunc("/updataUnReadMessage", handlers.UpdataMessageHandler)
 
+	http.HandleFunc("/leaveRoom", handlers.LeaveRoomHandler)
+	http.HandleFunc("/addMember", handlers.AddMemberHandler)
+
 	http.HandleFunc("/read", handlers.MarkMessageAsRead)
 
 	// メッセージ編集、削除、送信取消、リアクション

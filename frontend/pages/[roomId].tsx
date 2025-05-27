@@ -55,9 +55,8 @@ const ChatRoom = () => {
 
   // const wsRef = useRef<WebSocket | null>(null);
   //const socket = useWebSocket();
-
-  useEffect(() => {
     // 下までスクロール
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
@@ -322,16 +321,15 @@ const ChatRoom = () => {
       //socket.onmessage = null;
       setCurrentRoomId(null);
       currentRoomIdRef.current = null;
-      console.log("DDDDDDD：", currentRoomIdRef.current);
     };
   }, [roomId]);
 
   useEffect(() => {
     connectWebSocket();
     const token = localStorage.getItem("token");
-    const username = localStorage.getItem("loggedInUser");
+    //const username = localStorage.getItem("loggedInUser");
     const useridStr = localStorage.getItem("loggedInUserID");
-    const roomName = localStorage.getItem("roomName");
+    //const roomName = localStorage.getItem("roomName");
     const i_roomId = parseInt(roomId as string);
     console.log("i_roomId：",i_roomId);
     const userid = parseInt(useridStr ?? "",10);
@@ -449,8 +447,6 @@ const ChatRoom = () => {
         };
         setMessages((prev) => [...prev, newMessage]);
 
-
-        //console.log("🟣🟣🟣",userid,msg.postmessage.ID,roomId)
         // ✅ 既読リクエスト（自分のメッセージは除外
         const res = await fetch(`http://localhost:8080/read`, {
           method: "POST",
@@ -789,6 +785,67 @@ const ChatRoom = () => {
     }
   };
 
+  // ルーム退出
+  const handleLeaveRoom = async () => {
+    const userId = localStorage.getItem("loggedInUserID");
+    if (!userId || !roomId) return;
+  
+    if (!confirm("本当にルームを退出しますか？")) return;
+  
+    try {
+      const res = await fetch("http://localhost:8080/leaveRoom", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          room_id: parseInt(roomId as string),
+          user_id: parseInt(userId),
+        }),
+      });
+  
+      if (!res.ok) throw new Error("退出失敗");
+  
+      alert("ルームから退出しました");
+      router.push("/roomSelect"); // 戻るなどのリダイレクト
+    } catch (err) {
+      console.error("退出エラー:", err);
+      alert("退出に失敗しました");
+    }
+  };
+
+  // メンバー追加
+  const handleAddMember = async () => {
+    const userId = localStorage.getItem("loggedInUserID");
+    if (!userId || !roomId) return;
+  
+    //if (!confirm("本当にルームを退出しますか？")) return;
+  
+    try {
+      const res = await fetch("http://localhost:8080/addMember", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          room_id: parseInt(roomId as string),
+          // user_ids: selectedUsers, // TODO
+        }),
+      });
+  
+      if (!res.ok) throw new Error("退出失敗");
+  
+      alert("ルームから退出しました");
+      router.push("/roomSelect"); // 戻るなどのリダイレクト
+    } catch (err) {
+      console.error("退出エラー:", err);
+      alert("退出に失敗しました");
+    }
+
+    // router.push(`/addMember?room_id=${roomId}`);
+  };
+  
+
 
   return (
     <div style={{
@@ -829,6 +886,35 @@ const ChatRoom = () => {
       </div>
     )} */}
         <h2 style={{ color: "#388e3c", marginBottom: "15px" }}>ルーム：{groupName ? groupName : "ルーム名がありません"}</h2>
+        <button
+          onClick={handleLeaveRoom}
+          style={{
+            backgroundColor: "#f44336",
+            color: "white",
+            border: "none",
+            borderRadius: "20px",
+            padding: "10px 20px",
+            cursor: "pointer",
+            fontWeight: "bold",
+          }}
+        >
+          退出する
+        </button>
+
+        <button
+          onClick={handleAddMember}
+          style={{
+            backgroundColor: "#1976d2",
+            color: "white",
+            border: "none",
+            borderRadius: "20px",
+            padding: "10px 20px",
+            cursor: "pointer",
+            fontWeight: "bold",
+          }}
+        >
+          メンバー追加
+        </button>
         <div style={{ maxHeight: "500px", overflowY: "scroll", marginBottom: "15px" }}>
           {messages.length >= 0 ? (
             messages.map((msg, index) => {
