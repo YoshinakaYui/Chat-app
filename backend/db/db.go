@@ -27,6 +27,15 @@ type ChatRoom struct {
 	CreatedAt time.Time `gorm:"column:created_at" json:"created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at" json:"updated_at"`
 }
+
+type RoomInfo struct {
+	ID          int       `gorm:"column:id" json:"id"`
+	RoomName    string    `gorm:"column:room_name" json:"room_name"`
+	IsGroup     int       `gorm:"column:is_group" json:"is_group"`
+	CreatedAt   time.Time `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt   time.Time `gorm:"column:updated_at" json:"updated_at"`
+	UnreadCount int       `gorm:"column:unread_count" json:"unread_count"`
+}
 type RoomMember struct {
 	ID       int `gorm:"primaryKey"`
 	RoomID   int `json:"room_id"` // チャットルームのID
@@ -52,9 +61,9 @@ type MessageAttachment struct {
 }
 
 type MessageReads struct {
-	//ID        int       `gorm:"primaryKye"  json:"id"`
+	// ID        int       `gorm:"primaryKye"  json:"id"`
 	MessageID int       `gorm:"not null;index" json:"message_id"`
-	UserID    int       `json:"room_id"`
+	UserID    int       `json:"user_id"` // room_idだった
 	Reaction  string    `gorm:"type:varchar" json:"reaction"`
 	ReadAt    time.Time `gorm:"autoCreateTime" json:"read_at"`
 }
@@ -66,6 +75,17 @@ type MessageReadCount struct {
 	SenderID    int    `json:"sender_id"`
 	ReadCount   int    `json:"read_count"`
 	UnreadCount int    `json:"unread_count"`
+}
+
+type Mentions struct {
+	MessageID         int `json:"message_id"`
+	MentionedTargetID int `json:"mentioned_target_id"`
+}
+
+type DeletedMessage struct {
+	MessageID int       `json:"message_id"`
+	UserID    int       `json:"user_id"`
+	DeletedAt time.Time `json:"deleted_at"`
 }
 
 var DB *gorm.DB
@@ -128,24 +148,41 @@ func GetOtherUsers(loginedUserID int) ([]Users, error) {
 	return users, nil
 }
 
-// 所属個別ルームを取得
-func GetMyRooms(loginedUserID int) ([]ChatRoom, error) {
-	log.Println("🟡GetOtherUsers")
-	var rooms []ChatRoom
+// 所属個別ルームと未読数を取得
+func GetMyRooms(loginedUserID int) ([]RoomInfo, error) {
+	log.Println("🟡GetOtherUsers：スタート")
+	// var rooms []ChatRoom
 
-	// GORMクエリ
-	// room_nameには、相手の名前にして返す!
+	// // GORMクエリ
+	// // room_nameには、相手の名前にして返す!
+	// result := DB.Table("chat_rooms AS cr").
+	// 	Select("cr.id AS id, u.username AS room_name, cr.is_group, cr.created_at, cr.updated_at").
+	// 	Joins("JOIN room_members AS rm1 ON cr.id = rm1.room_id").
+	// 	Joins("JOIN room_members AS rm2 ON cr.id = rm2.room_id AND rm2.user_id <> ?", loginedUserID).
+	// 	Joins("JOIN users AS u ON rm2.user_id = u.id").
+	// 	Where("cr.is_group = 0 AND rm1.user_id = ?", loginedUserID).
+	// 	Group("cr.id, u.username, cr.is_group, cr.created_at, cr.updated_at").
+	// 	Having("COUNT(DISTINCT rm2.user_id) = 1").
+	// 	Order("cr.id ASC").
+	// 	Scan(&rooms).Error
+
+	var rooms []RoomInfo // 結果を格納する構造体
+
+	subQuery := DB.Table("message_reads AS mr").
+		Select("mr.message_id").
+		Where("mr.user_id = ?", loginedUserID)
+
 	result := DB.Table("chat_rooms AS cr").
-		Select("cr.id AS id, u.username AS room_name, cr.is_group, cr.created_at, cr.updated_at").
+		Select(`cr.id AS id, u.username AS room_name, cr.is_group, cr.created_at, cr.updated_at, COUNT(m.id) AS unread_count`).
 		Joins("JOIN room_members AS rm1 ON cr.id = rm1.room_id").
 		Joins("JOIN room_members AS rm2 ON cr.id = rm2.room_id AND rm2.user_id <> ?", loginedUserID).
 		Joins("JOIN users AS u ON rm2.user_id = u.id").
-		Where("cr.is_group = 0 AND rm1.user_id = ?", loginedUserID).
+		Joins("LEFT JOIN messages AS m ON m.room_id = cr.id AND m.id NOT IN (?)", subQuery).
+		Where("cr.is_group = ? AND rm1.user_id = ?", 0, loginedUserID).
 		Group("cr.id, u.username, cr.is_group, cr.created_at, cr.updated_at").
 		Having("COUNT(DISTINCT rm2.user_id) = 1").
 		Order("cr.id ASC").
 		Scan(&rooms).Error
-	log.Println("🍅：", rooms)
 
 	if result != nil {
 		fmt.Println("エラー:", result)
@@ -155,15 +192,22 @@ func GetMyRooms(loginedUserID int) ([]ChatRoom, error) {
 }
 
 // 所属グループルームを取得
-func GetMyGroupRooms(userid int) ([]ChatRoom, error) {
+func GetMyGroupRooms(userid int) ([]RoomInfo, error) {
 	log.Println("GetMyGroupRooms")
-	var rooms []ChatRoom
+	var rooms []RoomInfo
 
 	// GORMクエリ
 	result := DB.Table("chat_rooms cr").
-		Select("cr.*").
+		Select(`cr.*, COUNT(m.id) AS unread_count`).
 		Joins("JOIN room_members rm ON cr.id = rm.room_id").
-		Where("rm.user_id = ? and cr.is_group = 1", userid).
+		Joins(`
+        LEFT JOIN messages m ON m.room_id = cr.id
+        AND m.sender_id <> ?
+        AND m.id NOT IN (
+            SELECT mr.message_id FROM message_reads mr WHERE mr.user_id = ?
+        )`, userid, userid).
+		Where("rm.user_id = ? AND cr.is_group = 1", userid).
+		Group("cr.id").
 		Order("cr.id ASC").
 		Scan(&rooms).Error
 
@@ -173,18 +217,3 @@ func GetMyGroupRooms(userid int) ([]ChatRoom, error) {
 	}
 	return rooms, nil
 }
-
-// 入室したユーザーの人数取得
-// var memberCount int
-
-// var err = db.Raw(`
-//   SELECT COUNT(*)
-//   FROM room_members
-//   WHERE room_id = ?
-// `, roomID).Row().Scan(&memberCount)
-
-// if err != nil {
-//     log.Println("エラー:", err)
-// } else {
-//     fmt.Println("部屋の参加者数:", memberCount)
-// }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { createWebSocket } from "../utils/websocket";
+import { connectWebSocket } from "../utils/websocket";
 import Head from "next/head";
 import Link from "next/link";
 
@@ -30,14 +30,13 @@ export default function Login() {
         router.push("/roomSelect");
 
         // // ログイン成功後にWebSocket接続
-        const socket = createWebSocket((message: any) => {
+        //const socket = connectWebSocket((message: any) => {
+        const socket = connectWebSocket();
+        if (socket !== null) {
           console.log("天才！")
-          console.log("受信したメッセージ:", message);
-        });
-
-        socket.onopen = () => {
-          console.log("WebSocket接続成功！");
+          console.log("受信したメッセージ:");
         };
+
 
       } else {
         alert("ログイン失敗");
@@ -51,7 +50,7 @@ export default function Login() {
 
   // useEffect(() => {
   //   // 初回レンダリング時にWebSocket接続の設定を行う
-  //   const socket = createWebSocket((message: any) => {
+  //   const socket = connectWebSocket((message: any) => {
   //     console.log("受信したメッセージ:", message);
   //   });
   //   console.log("天才！")

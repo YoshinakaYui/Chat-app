@@ -95,27 +95,8 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 			joinJSON, _ := json.Marshal(joinBroadcast)
 			broadcast <- joinJSON
 
-		} else {
-			// メッセージのブロードキャスト
-			// ② 通常のチャットメッセージ処理
-			var incoming IncomingMessage
-			if err := json.Unmarshal(msg, &incoming); err != nil {
-				fmt.Println("JSON解析エラー:", err)
-				continue
-			}
-
-			log.Println("🟦：", incoming)
-
-			outJSON, err := json.Marshal(incoming)
-			if err != nil {
-				fmt.Println("JSON変換エラー:", err)
-				continue
-			}
-
-			// 皆にメッセージを送信（ブロードキャスト）
-			broadcast <- outJSON
-
 		}
+
 	}
 
 }

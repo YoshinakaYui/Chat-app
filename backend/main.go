@@ -28,24 +28,29 @@ func main() {
 	http.HandleFunc("/login", handlers.LoginHandler)
 
 	http.HandleFunc("/roomSelect", handlers.GetUsersHandler)
-	http.HandleFunc("/groupRoomSelect", handlers.GetGroupRoomsHandlers)
 	http.HandleFunc("/PersonalRoomSelect", handlers.GetPersonalRoomsHandlers)
+	http.HandleFunc("/groupRoomSelect", handlers.GetGroupRoomsHandlers)
 
 	http.HandleFunc("/createRooms", handlers.CreateGroupRoom)
 	http.HandleFunc("/createGroup", handlers.CreateGroupRoom)
 	http.HandleFunc("/getRooms", handlers.CreateGroupRoom)
 
-	http.HandleFunc("/getRoomMessages", handlers.MessageHandler)
-	http.HandleFunc("/message", handlers.MessageHandler)
+	http.HandleFunc("/getRoomMessages", handlers.GetMessagesHandler)
+	http.HandleFunc("/message", handlers.SendMessageHandler)
 	http.HandleFunc("/sendFile", handlers.UploadHandler)
 	http.HandleFunc("/updataUnReadMessage", handlers.UpdataMessageHandler)
 
 	http.HandleFunc("/read", handlers.MarkMessageAsRead)
 
-	// メッセージ削除、編集
-	http.HandleFunc("/deleteOnlyMessage", handlers.DeleteOnlyMessageHandler)
-	http.HandleFunc("/deleteMessage", handlers.DeleteMessageHandler)
+	// メッセージ編集、削除、送信取消、リアクション
 	http.HandleFunc("/editMessage", handlers.EditMessageHandler)
+	http.HandleFunc("/deleteMyMessage", handlers.DeleteMyMessageHandler)
+	http.HandleFunc("/deleteMessage", handlers.DeleteMessageHandler)
+	http.HandleFunc("/addReaction", handlers.ReactionHandler)
+
+	// メンション
+	http.HandleFunc("/getRoomMembers", handlers.GetRoomMembersHandler)
+	http.HandleFunc("/addMention", handlers.MentionHandler)
 
 	log.Println("サーバー起動中 http://localhost:8080")
 	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))

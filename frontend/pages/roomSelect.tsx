@@ -2,16 +2,9 @@ import Head from "next/head";
 import { useRouter } from "next/navigation";
 import { Geist, Geist_Mono } from "next/font/google";
 import { useState, useEffect } from "react";
+//import { useWebSocket } from "@/pages/WebSocketContext";
+import { connectWebSocket, addMessageListener, removeMessageListener } from "../utils/websocket";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 interface User {
   id: number;
@@ -20,6 +13,9 @@ interface User {
 interface Room {
   id: number;
   room_name: string;
+  unread_count: number;
+  //mention: number;// TODO:メンション
+  is_group: number;
 }
 interface Member {
   room_id: number;
@@ -33,7 +29,7 @@ export default function RoomSelect() {
   const [loggedInUserID, setLoggedInUserID] = useState<number | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [members, setMembers] = useState<Member[]>([]);
+  // const [members, setMembers] = useState<Member[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPersonalModalOpen, setIsPersonalModalOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
@@ -42,6 +38,11 @@ export default function RoomSelect() {
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
   const router = useRouter();
+  //const socket = useWebSocket();
+  
+  // const [mentionMessage, setMentionMessage] = useState<string | null>(null);
+  const [mentionedRooms, setMentionedRooms] = useState<number[]>([1, 5]); // メンション対象のroom.id
+
 
   // ルーム作成モーダル
   const openModal = () => {
@@ -54,7 +55,7 @@ export default function RoomSelect() {
     setSelectedUsers([]);
     setIsPersonalModalOpen(true);
   }
-    const closePersonalModal = () => setIsPersonalModalOpen(false);
+  const closePersonalModal = () => setIsPersonalModalOpen(false);
 
   //グループルーム作成
   const handleCreateGroup = async () => {
@@ -144,7 +145,82 @@ export default function RoomSelect() {
     }
   }, []);
 
-  // ユーザー一覧の取得
+  // メッセージ受け取り
+  useEffect(() => {
+    connectWebSocket();
+
+    const handleMessage = (msg: any) => {
+      const loginUserID = localStorage.getItem("loggedInUserID");
+      const i_loginUserID = loginUserID ? parseInt(loginUserID, 10) : null;
+
+
+      console.log("▶︎▶︎▶︎▶︎▶︎▶︎▶︎",msg); // ロジックを書く
+      console.log("ルーム選択▶︎▶︎▶︎▶︎▶︎▶︎▶︎"); // ロジックを書く
+
+      if (msg.type === "unreadmessage") {
+        console.log("👥 未読通知を受信:", msg.userId);
+        interface SendMessages {
+          user_id: number;
+          room_id: number;
+          unread_count: number;
+          //mention: number;//TODO:メンション
+        }
+
+        // SendMessagesをMapに変換して高速アクセス
+        const sendMap = new Map<number, SendMessages>();
+        for (const sm of msg.unReadMessage) {
+
+          if(i_loginUserID === sm.user_id){
+            sendMap.set(sm.room_id, sm);
+          }
+        }
+        console.log("未読sendMap：",sendMap);
+
+        // personalsを上書きして新しい未読配列を返す
+        setPersonals((prevPersonals) =>
+          prevPersonals.map(personallist => {
+            console.log("Personal.mapスタート ");
+            const readInfo = sendMap.get(personallist.id);
+            if (readInfo) {
+              console.log("readInfo:", personallist.id, " > ", personallist.room_name, " > ", personallist.unread_count);
+              return {
+                ...personallist,
+                unread_count: readInfo.unread_count
+                // :メンション
+              };
+            }
+            return personallist;
+          })
+        );
+        
+        // rooms(group)を上書きして新しい未読配列を返す
+        setRooms((prevRooms) =>
+          prevRooms.map(roomlist => {
+            console.log("GroupRoom.mapスタート ");
+            const readInfo = sendMap.get(roomlist.id);
+            if (readInfo) {
+              console.log("readInfo:", roomlist.id, " > ", roomlist.room_name, " > ", roomlist.unread_count);
+              return {
+                ...roomlist,
+                unread_count: readInfo.unread_count
+                // TODO:メンション
+              };
+            }
+            return roomlist;
+          })
+        );
+
+
+      }
+
+
+    };
+
+    addMessageListener(handleMessage);
+    return() => removeMessageListener(handleMessage);
+  }, []);
+
+  // ルーム作成のときのユーザー一覧(モーダル)の取得  // socketのonmessage（onmessageを違うファイルでも作れるのか？タイプ）
   useEffect(() => {
     const fetchUsers = async () => {
       try {
@@ -214,14 +290,20 @@ export default function RoomSelect() {
         const data = await res.json();
         console.log("🟣Personal：",data)
         if (Array.isArray(data)) {
+          console.log("data:",data);
           setPersonals(data);
         }
+        console.log("personals:",personals);
       } catch (err) {
         console.error("ルーム一覧取得エラー：", err);
       }
     };
     fetchPersonalRooms();
   }, []);
+
+  useEffect(() => {
+    console.log("✅更新された personals:", personals);
+  }, [personals]);
 
   // 所属しているグループルーム一覧の取得
   useEffect(() => {
@@ -253,7 +335,7 @@ export default function RoomSelect() {
         }
 
         const data = await res.json();
-        console.log("🟣",data)
+        console.log("🟣ルーム取得：",data)
         if (Array.isArray(data)) {
           setRooms(data);
         }
@@ -309,6 +391,7 @@ export default function RoomSelect() {
   // ルームを選択してルームへ
   const handleSelectRoom = async (room: Room) => {
     try {
+      console.log("チャットルームへ");
       const token = localStorage.getItem("token");
       if (!token) {
         alert("ログインされていません");
@@ -340,7 +423,7 @@ export default function RoomSelect() {
   // ルーム作成時にもリアルタイム反映をさせた
   useEffect(() => {
     // // WebSocket接続の処理
-    // const socket = createWebSocket((message: any) => {
+    // const socket = connectWebSocket((message: any) => {
     //   console.log("受信したメッセージ:", message);
     //   const newRoom = JSON.parse(message);
 
@@ -363,12 +446,18 @@ export default function RoomSelect() {
 
 
   const handleLogout = () => {
+    //socket?.close();
     localStorage.removeItem("loggedInUser");
     localStorage.removeItem("token");
     alert("ログアウトしました");
     router.push("/top");
-    //socket.close();
   };
+
+// メンション通知を受けたときにこれを呼ぶだけ
+// const showMentionNotification = (text: string) => {
+//   setTimeout(() => setMentionMessage(null), 5000);
+// };
+// showMentionNotification("@ハリー からメンションされました！");
 
   return (
     <>
@@ -442,8 +531,20 @@ export default function RoomSelect() {
                     transition: "all 0.3s",
                   }}
                 >
-                  <div style={{ backgroundColor: "#81c784", width: "10px", height: "10px", borderRadius: "50%", marginRight: "15px" }}></div>
+                <div style={{ backgroundColor: "#81c784", width: "10px", height: "10px", borderRadius: "50%", marginRight: "15px" }}></div>
                   <span style={{ color: "#333", fontSize: "18px", textAlign: "left" }}>{personal.room_name}</span>
+                    {personal.unread_count != 0 && (
+                      <div style={{   
+                        backgroundColor: '#d02f2f',
+                        color: 'white',
+                        borderRadius: '9999px',
+                        padding: '4px 8px',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        marginLeft: 'auto',
+                        marginRight: '10px',
+                        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'}}>{personal.unread_count}</div>
+                    )}
                 </div>
               ))}
             </div>
@@ -495,6 +596,31 @@ export default function RoomSelect() {
                 >
                   <div style={{ backgroundColor: "#81c784", width: "10px", height: "10px", borderRadius: "50%", marginRight: "15px" }}></div>
                   <span style={{ color: "#333", fontSize: "18px", textAlign: "left" }}>{room.room_name}</span>
+                  {(
+                    // TODO:メンション
+                    <div style={{   
+                      backgroundColor: '#426AB3',
+                      color: 'white',
+                      borderRadius: '9999px',
+                      padding: '4px 8px',
+                      fontSize: '9px',
+                      fontWeight: 'bold',
+                      marginLeft: 'auto',
+                      marginRight: '10px',
+                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'}}>@ メンションされました</div>
+                  )}
+                  {room.unread_count != 0 && (
+                      <div style={{   
+                        backgroundColor: '#d02f2f',
+                        color: 'white',
+                        borderRadius: '9999px',
+                        padding: '4px 8px',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        marginLeft: 'auto',
+                        marginRight: '10px',
+                        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'}}>{room.unread_count}</div>
+                    )}
                 </div>
               ))}
             </div>
