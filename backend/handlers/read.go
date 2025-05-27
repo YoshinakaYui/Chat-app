@@ -4,6 +4,7 @@ import (
 	"backend/db"
 	"backend/utils"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -22,6 +23,7 @@ type MessageRead struct {
 	ReadAt    time.Time `json:"read_at"`
 }
 
+// 既読
 func MarkMessageAsRead(w http.ResponseWriter, r *http.Request) {
 	log.Println("🟩MarkMessageAsRead")
 
@@ -44,6 +46,8 @@ func MarkMessageAsRead(w http.ResponseWriter, r *http.Request) {
 		log.Println("read.go エラー：", err)
 		return
 	}
+	log.Println("🔺🔺🔺req：", req)
+
 	log.Println("🟩-2")
 
 	read := MessageRead{
@@ -51,13 +55,13 @@ func MarkMessageAsRead(w http.ResponseWriter, r *http.Request) {
 		UserID:    req.UserID,
 		ReadAt:    time.Now(),
 	}
-	log.Println("🟩", read)
+	//log.Println("🟩", read)
 
 	if err := db.DB.Table("message_reads").Create(&read).Error; err != nil {
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
-	log.Println("🟩2：", read)
+	//log.Println("🟩2：", read)
 
 	var messageid = []int{req.MessageID}
 	i_roomid, err := strconv.Atoi(req.RoomID)
@@ -66,6 +70,69 @@ func MarkMessageAsRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	BroadcastReadCountsToRoom(i_roomid, messageid)
+
+	log.Println("🔺🔺🔺未読数取得-AA")
+
+	// 未読のリアルタイム通知（roomSelect宛）
+	type UnreadResult struct {
+		UserID      int `json:"user_id" gorm:"column:user_id"`
+		RoomID      int `json:"room_id" gorm:"column:room_id"`
+		UnreadCount int `json:"unread_count" gorm:"column:unread_count"`
+		Mention     int `json:"mention" gorm:"column:mention"`
+	}
+
+	var results []UnreadResult
+
+	err1 := db.DB.
+		Raw(`
+		SELECT
+		  rm.user_id,
+		  m.room_id,
+		  COUNT(*) AS unread_count
+		FROM messages m
+		JOIN room_members rm ON rm.room_id = m.room_id
+		WHERE m.room_id = ?
+		  AND rm.user_id != ?
+		  AND NOT EXISTS (
+		    SELECT 1
+		    FROM message_reads mr
+		    WHERE mr.message_id = m.id
+		      AND mr.user_id = rm.user_id
+		  )
+		GROUP BY rm.user_id, m.room_id
+	`, i_roomid, req.UserID).
+		Scan(&results).Error
+
+	log.Println("----", i_roomid, req.UserID)
+
+	if err1 != nil {
+		log.Println("未読数の取得エラー:", err1)
+	} else {
+		for _, r := range results {
+			fmt.Printf("room_id: %d, 未読数: %d\n", r.RoomID, r.UnreadCount)
+		}
+	}
+	log.Println("🔺🔺🔺未読数取得-BB:", results)
+
+	if len(results) != 0 {
+		// 既読を他のクライアントへブロードキャスト
+		joinBroadcast := map[string]interface{}{
+			"type":          "unreadmessage",
+			"unReadMessage": results,
+			"room_id":       i_roomid,
+		}
+		joinJSON, _ := json.Marshal(joinBroadcast)
+		log.Println("未読ブロードキャスト：", joinJSON)
+
+		var decoded map[string]interface{}
+		err2 := json.Unmarshal(joinJSON, &decoded)
+		if err2 != nil {
+			log.Println("JSONデコード失敗:", err2)
+		}
+		log.Println("未読ブロードキャストPPP：", decoded)
+
+		broadcast <- joinJSON
+	}
 
 	w.WriteHeader(http.StatusOK)
 	// JSONレスポンス

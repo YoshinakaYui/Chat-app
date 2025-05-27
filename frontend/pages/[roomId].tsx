@@ -1,13 +1,15 @@
 import { useRouter } from "next/router";
 import React from "react";
 import { useState, useEffect, useRef } from "react";
-import { createWebSocket } from "../utils/websocket";
 import EmojiPicker from 'emoji-picker-react';
 import Link from "next/link";
-import { TbXxx } from "react-icons/tb";
+//import { useWebSocket } from "@/pages/WebSocketContext";
+import { connectWebSocket, addMessageListener, removeMessageListener } from "../utils/websocket";
 
-//import styles from "@/styles/Home.module.css";
-
+interface User {
+  id: number;
+  username: string;
+}
 interface Message {
   id: number;
   sender: number;
@@ -16,6 +18,7 @@ interface Message {
   content: string;
   allread: boolean; // 既読状態を追跡するフラグ
   readcount: number;
+  reaction?: string | null;
 }
 
 const ChatRoom = () => {
@@ -32,7 +35,8 @@ const ChatRoom = () => {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const [groupName, setGroupName] = useState<string | null>(null);
-  const [socket, setSocket] = useState<WebSocket | null>(null);
+  const [currentRoomId, setCurrentRoomId] = useState<number | null>(null);
+  const currentRoomIdRef = useRef<number | null>(null);
 
   const [hoveredMessageId, setHoveredMessageId] = useState<number | null>(null);
   const [isOtherUserInRoom, setIsOtherUserInRoom] = useState(false);
@@ -43,57 +47,67 @@ const ChatRoom = () => {
   const [isEditing, setIsEditing] = useState(false);  
   const [editText, setEditText] = useState<string>(""); // 編集中の内容
   const [showEmojiPicker, setShowEmojiPicker] = useState(false); // 絵文字
+  const [showMentionList, setShowMentionList] = useState(false);
+  
 
-  const wsRef = useRef<WebSocket | null>(null);
+  const [members, setmembers] = useState<User[]>([]);
+
+
+  // const wsRef = useRef<WebSocket | null>(null);
+  //const socket = useWebSocket();
 
   useEffect(() => {
     // 下までスクロール
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    console.log("currentRoomId が変化した：", currentRoomId);
+    currentRoomIdRef.current = currentRoomId;
+  }, [currentRoomId]);
 
-useEffect(() => {
-  //let ws: WebSocket;
-  const setupChat = async () => {
-    console.log("setupChat開始")
-    console.log("現在の wsRef:", wsRef.current) 
-    if (wsRef.current) {
-      console.log("⚠️ WebSocketが既に存在しています");
-      return;
-    }
-    const ws = new WebSocket("ws://localhost:8080/ws");
-    wsRef.current = ws; // ✅ useRefで管理
-    setSocket(ws);
+  useEffect(() => {
+    // if (!socket) {
+    //   console.log("!socket")
+    //   return;
+    // }
 
-    try {
-      // --- ローカルストレージから取得 ---
-      const token = localStorage.getItem("token");
-      const username = localStorage.getItem("loggedInUser");
-      const useridStr = localStorage.getItem("loggedInUserID");
-      const roomName = localStorage.getItem("roomName");
-      setGroupName(roomName);
-
-      if (!token || !useridStr) {
-        alert("ログインされていません");
-        router.push("/top");
-        return;
-      }
-
-      const userid = parseInt(useridStr, 10);
-      setLoggedInUser(username ?? "");
-      setLoggedInUserid(userid);
-
-      // --- WebSocket初期化 ---
-      // const ws = new WebSocket("ws://localhost:8080/ws");
-      // ✅ WebSocket初期化
-      // console.log("WebSocket初期化");
-      // const ws = new WebSocket("ws://localhost:8080/ws");
-      // wsRef.current = ws; // useRefに保持
-      // setSocket(ws);      // 既存のステートも更新（必要なら）
+    //connectWebSocket();
 
 
-      // Socket Open時のイベント
-      ws.onopen = async () => {
+
+    const setupChat = async () => {
+      console.log("setupChat開始")
+      // console.log("現在の wsRef:", wsRef.current) 
+      // if (wsRef.current) {
+      //   console.log("⚠️ WebSocketが既に存在しています");
+      //   return;
+      // }
+
+      try {
+        // --- ローカルストレージから取得 ---
+        const token = localStorage.getItem("token");
+        const username = localStorage.getItem("loggedInUser");
+        const useridStr = localStorage.getItem("loggedInUserID");
+        const roomName = localStorage.getItem("roomName");
+        const i_roomId = parseInt(roomId as string);
+        console.log("i_roomId：",i_roomId);
+
+        setCurrentRoomId(i_roomId);
+        console.log("currentRoomId：", currentRoomId);
+
+        setGroupName(roomName);
+
+        if (!token || !useridStr) {
+          alert("ログインされていません");
+          router.push("/top");
+          return;
+        }
+
+        const userid = parseInt(useridStr, 10);
+        setLoggedInUser(username ?? "");
+        setLoggedInUserid(userid);
+
         console.log("✅ WebSocket接続完了");
 
         // ✅ 自分の入室通知
@@ -103,13 +117,14 @@ useEffect(() => {
             roomId: parseInt(roomId as string),
             userId: userid,
           };
-          ws.send(JSON.stringify(joinEvent));
+          //socket.send(JSON.stringify(joinEvent));
           console.log("🟢 入室通知送信:", joinEvent);
           setMessages((prev) => prev.map((msg) => ({ ...msg, isRead: true })));
         }
         
 
         // ✅ メッセージ履歴取得
+        console.log("userid：", userid);
         const res = await fetch(`http://localhost:8080/getRoomMessages?room_id=${roomId}`,{
           method: "PUT",
           headers: {
@@ -122,9 +137,7 @@ useEffect(() => {
         const data = await res.json();
         console.log("😭",data.messages);
         setMessages(data.messages);
-        //console.log("😭2",messages);
 
-        
 
         // ✅ nullチェック追加！
         if (data && Array.isArray(data.messages)) {
@@ -132,21 +145,6 @@ useEffect(() => {
         } else {
           setMessages([]); // nullや不正な値の場合は空配列
         }
-
-        // とりあえずコメント
-        // if (data && Array.isArray(data.messages)) {
-        //   const formatted: Message[] = data.messages.map((msg: any) => ({
-        //     type:"chat", // ✅ 自動判別でもOK
-        //     id: msg.message_id,
-        //     sender: msg.sender_id,
-        //     sendername: msg.sender_name,
-        //     content: msg.content || "(空メッセージ)",
-        //     isRead: msg.is_read ?? false,
-        //   }));
-        //   console.log("🔍 formatted:", formatted);
-        //   setMessages(formatted);
-        // }
-
 
         // ✅ 一括既読更新（画面表示された履歴分）
         console.log("FFFFF");
@@ -164,176 +162,327 @@ useEffect(() => {
         const markResult = await markRes.json();
         if (markRes.ok) {
           console.log("✅ 履歴既読化成功:", markResult);
-          //setMessages((prev) => prev.map((msg) => ({ ...msg, allread: true })));  // この行で、allreadが全てtrueに上書きされる！
         }
-      };
 
-      // ✅ WebSocket受信処理
-      ws.onmessage = async (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          console.log("📩 WebSocket受信:", msg);
 
-          //✅ user_joined メッセージは無視（または通知として別処理）
-          if (msg.type === "user_joined") {
-            console.log("👥 入室通知イベントを受信:", msg.userId);
+        // ✅ WebSocket受信処理
+        //socket.onmessage = async (event) => {
+        // const handleMessage = async (msg: any) => {
+        //   try {
+        //     //const msg = JSON.parse(event.data);
+        //     console.log("📩 ▶︎▶︎▶︎▶︎▶︎▶︎▶︎▶︎▶︎", msg);
+        //     console.log("msg.roomid:", msg.room_id, "currentRoomIdRef.current:",currentRoomIdRef.current )
 
-            // ✅ 自分以外が入室してきたときに true にする
-            if (Number(msg.userId) !== Number(userid)) {
-              isOtherUserInRoomRef.current = true;
-              setIsOtherUserInRoom(true);
-              //console.log("✅ 他のユーザーが入室：isOtherUserInRoom = true");
-              console.log("✅ isOtherUserInRoom = ",isOtherUserInRoom);
-            }
-            return;
+        //     if (msg.room_id !== currentRoomIdRef.current){
+        //       console.log("msg.room_id：", msg.room_id);
+        //       console.log("currentRoomId：", currentRoomIdRef.current);
+        //       console.log("ルームIDが違います");
+        //       return;
+        //     }
+
+        //     //✅ user_joined メッセージは無視（または通知として別処理）
+        //     if (msg.type === "user_joined") {
+        //       console.log("👥 入室通知イベントを受信:", msg.userId);
+
+        //       // ✅ 自分以外が入室してきたときに true にする
+        //       if (Number(msg.userId) !== Number(userid)) {
+        //         isOtherUserInRoomRef.current = true;
+        //         setIsOtherUserInRoom(true);
+        //         console.log("✅ isOtherUserInRoom = ",isOtherUserInRoom);
+        //       }
+        //       return;
+        //     }
+
+        //     // 新しいメッセージの既読情報の更新
+        //     if (msg.type === "newreadmessage") {
+        //       console.log("既読更新：", msg);
+
+        //       interface SendMessages {
+        //         room_id: number;
+        //         message_id: number;
+        //         readcount: number;
+        //         allread: boolean;
+        //       }
+
+        //       // SendMessagesをMapに変換して高速アクセス
+        //       const sendMap = new Map<number, SendMessages>();
+        //       for (const sm of msg.newReadMessage) {
+        //         sendMap.set(sm.message_id, sm);
+        //       }
+        //       console.log("sendMap：",sendMap);
+
+        //       // messagesを上書きして新しい配列を返す
+        //       setMessages((prevMessages) =>
+        //         prevMessages.map(msglist => {
+        //           //console.log("Messages.mapスタート ");
+        //           const readInfo = sendMap.get(msglist.id);
+        //           if (readInfo) {
+        //             //console.log("readInfo:", msglist.id, " > ", msglist.content, " > ", msglist.readcount);
+        //             return {
+        //               ...msglist,
+        //               allread: readInfo.allread,
+        //               readcount: readInfo.readcount
+        //             };
+        //           }
+        //           return msglist;
+        //         })
+        //       );
+
+        //       return;
+        //     }
+
+        //     if(msg.type === "updataMessage"){
+        //       console.log("編集を共有")
+        //       setMessages((prevMessages) =>
+        //         prevMessages.map(msglist => {
+        //           //console.log("Messages.mapスタート");
+        //           if(msglist.id === msg.messageid){
+        //             return{
+        //               ...msglist,
+        //               content: msg.content
+        //             }
+        //           }
+        //           return msglist;
+        //         })
+        //       );
+        //       return
+        //     }
+            
+        //     // ✅ 通常のチャットメッセージのみ以下を実行
+        //     if (msg.type !== "postmessage"){
+        //       console.log("postmessage以外は無視");
+        //       return;
+        //     }
+        //     if(!msg.postmessage.Content){
+        //       console.log("msg.content：エラー");
+        //       return;
+        //     }
+        //     if(typeof msg.postmessage.Content !== "string"){
+        //       console.log("typeof msg.content：エラー");
+        //       return;
+        //     }
+        //     if (!msg.postmessage.ID || !msg.postmessage.Content || typeof msg.postmessage.Content !== "string") {
+        //       console.warn("⚠️ 無効なチャットメッセージ:", msg);
+        //       return;
+        //     }        
+        //     console.log("👤：",msg.postmessage.SenderID, userid);
+
+
+        //     // ✅ 表示に追加
+        //     const newMessage: Message = {
+        //       id: msg.postmessage.ID,
+        //       sender: msg.postmessage.SenderID,
+        //       sendername: msg.postmessage.sendername,
+        //       type: msg.postmessage.Content.includes("/uploads/") ? "image" : "text", // ✅ 自動判別でもOK
+        //       content: msg.postmessage.Content,
+        //       allread: false,
+        //       readcount: 1,
+        //     };
+        //     setMessages((prev) => [...prev, newMessage]);
+
+
+        //     //console.log("🟣🟣🟣",userid,msg.postmessage.ID,roomId)
+        //     // ✅ 既読リクエスト（自分のメッセージは除外
+        //     const res = await fetch(`http://localhost:8080/read`, {
+        //       method: "POST",
+        //       headers: {
+        //         "Content-Type": "application/json",
+        //         "Authorization": `Bearer ${token}`,
+        //       },
+        //       body: JSON.stringify({ login_id: userid, msg_id: msg.postmessage.ID, room_id: roomId}),
+        //     });
+        //     if (!res.ok) {
+        //       throw new Error("未読一覧取得失敗");
+        //     }
+
+        //     const data = await res.json();
+        //     console.log("PP：",data.data.MessageID);  // エラー、undefind
+
+
+        //   } catch (err) {
+        //     console.error("❌ WebSocket受信処理エラー:", err);
+        //   };
+        // };
+        // addMessageListener(handleMessage);
+        // return() => removeMessageListener(handleMessage);
+
+      } catch (err) {
+        console.error("❌ チャット初期化エラー:", err);
+        setMessages([]);
+      }
+    };
+    if (roomId) {
+      setupChat();
+    }
+
+    // ✅ クリーンアップ処理で WebSocket を確実に閉じる
+    return () => {
+      // 離脱時はnullにする
+      console.log("roomid clear.")
+      //socket.onmessage = null;
+      setCurrentRoomId(null);
+      currentRoomIdRef.current = null;
+      console.log("DDDDDDD：", currentRoomIdRef.current);
+    };
+  }, [roomId]);
+
+  useEffect(() => {
+    connectWebSocket();
+    const token = localStorage.getItem("token");
+    const username = localStorage.getItem("loggedInUser");
+    const useridStr = localStorage.getItem("loggedInUserID");
+    const roomName = localStorage.getItem("roomName");
+    const i_roomId = parseInt(roomId as string);
+    console.log("i_roomId：",i_roomId);
+    const userid = parseInt(useridStr ?? "",10);
+
+    const handleMessage = async (msg: any) => {
+      try {
+        //const msg = JSON.parse(event.data);
+        console.log("📩 ▶︎▶︎▶︎▶︎▶︎▶︎▶︎▶︎▶︎", msg);
+        console.log("msg.roomid:", msg.room_id, "currentRoomIdRef.current:",currentRoomIdRef.current )
+
+        if (msg.room_id !== currentRoomIdRef.current){
+          console.log("msg.room_id：", msg.room_id);
+          console.log("currentRoomId：", currentRoomIdRef.current);
+          console.log("ルームIDが違います");
+          return;
+        }
+
+        //✅ user_joined メッセージは無視（または通知として別処理）
+        if (msg.type === "user_joined") {
+          console.log("👥 入室通知イベントを受信:", msg.userId);
+
+          // ✅ 自分以外が入室してきたときに true にする
+          if (Number(msg.userId) !== Number(userid)) {
+            isOtherUserInRoomRef.current = true;
+            setIsOtherUserInRoom(true);
+            console.log("✅ isOtherUserInRoom = ",isOtherUserInRoom);
+          }
+          return;
+        }
+
+        // 新しいメッセージの既読情報の更新
+        if (msg.type === "newreadmessage") {
+          console.log("既読更新：", msg);
+
+          interface SendMessages {
+            room_id: number;
+            message_id: number;
+            readcount: number;
+            allread: boolean;
           }
 
-          // 新しいメッセージの既読情報の更新
-          if (msg.type === "newreadmessage") {
-            console.log("既読更新：", msg);
-            if (String(msg.roomId) !== roomId) {
-              return;
-            }
+          // SendMessagesをMapに変換して高速アクセス
+          const sendMap = new Map<number, SendMessages>();
+          for (const sm of msg.newReadMessage) {
+            sendMap.set(sm.message_id, sm);
+          }
+          console.log("sendMap：",sendMap);
 
-            interface SendMessages {
-              room_id: number;
-              message_id: number;
-              readcount: number;
-              allread: boolean;
-            }
+          // messagesを上書きして新しい配列を返す
+          setMessages((prevMessages) =>
+            prevMessages.map(msglist => {
+              //console.log("Messages.mapスタート ");
+              const readInfo = sendMap.get(msglist.id);
+              if (readInfo) {
+                //console.log("readInfo:", msglist.id, " > ", msglist.content, " > ", msglist.readcount);
+                return {
+                  ...msglist,
+                  allread: readInfo.allread,
+                  readcount: readInfo.readcount
+                };
+              }
+              return msglist;
+            })
+          );
 
-            // SendMessagesをMapに変換して高速アクセス
-            const sendMap = new Map<number, SendMessages>();
-            for (const sm of msg.newReadMessage) {
-              sendMap.set(sm.message_id, sm);
-            }
-            console.log("sendMap：",sendMap);
+          return;
+        }
 
-            // messagesを上書きして新しい配列を返す
-            setMessages((prevMessages) =>
-              prevMessages.map(msglist => {
-                console.log("Messages.mapスタート ");
-                const readInfo = sendMap.get(msglist.id);
-                if (readInfo) {
-                  console.log("readInfo:", msglist.id, " > ", msglist.content, " > ", msglist.readcount);
-                  return {
-                    ...msglist,
-                    allread: readInfo.allread,
-                    readcount: readInfo.readcount
-                  };
+        if(msg.type === "updataMessage"){
+          console.log("編集を共有")
+          setMessages((prevMessages) =>
+            prevMessages.map(msglist => {
+              //console.log("Messages.mapスタート");
+              if(msglist.id === msg.messageid){
+                return{
+                  ...msglist,
+                  content: msg.content
                 }
-                return msglist;
-              })
-            );
-
-            return;
-          }
-
-          if(msg.type === "updataMessage"){
-            console.log("編集を共有")
-            if (String(msg.roomId) !== roomId) {
-              console.log("ルームID既読：aaaaaaaaaaaa");
-              return;
-            }
-            setMessages((prevMessages) =>
-              prevMessages.map(msglist => {
-                console.log("Messages.mapスタート");
-                if(msglist.id === msg.messageid){
-                  return{
-                    ...msglist,
-                    content: msg.content
-                  }
-                }
-                return msglist;
-              })
-            );
-            return
-          }
-          
-          console.log("setupChat-2")
-          console.log("現在の wsRef-2:", wsRef.current) 
-          // ✅ 通常のチャットメッセージのみ以下を実行
-          if (!msg.postmessage.ID){
-            console.log("msg.id：エラー");
-          }
-          if(!msg.postmessage.Content){
-            console.log("msg.content：エラー");
-          }
-          if(typeof msg.postmessage.Content !== "string"){
-            console.log("typeof msg.content：エラー");
-          }
-          if (!msg.postmessage.ID || !msg.postmessage.Content || typeof msg.postmessage.Content !== "string") {
-            console.warn("⚠️ 無効なチャットメッセージ:", msg);
-            return;
-          }        
-          console.log("👤：",msg.postmessage.SenderID, userid);
-
-          if (Number(msg.postmessage.RoomID) !== Number(roomId)) {
-            console.log("☀️ ルームIDが違うので、メッセージを無視");
-            return;
-          }
+              }
+              return msglist;
+            })
+          );
+          return
+        }
+        
+        // ✅ 通常のチャットメッセージのみ以下を実行
+        if (msg.type !== "postmessage"){
+          console.log("postmessage以外は無視");
+          return;
+        }
+        if(!msg.postmessage.Content){
+          console.log("msg.content：エラー");
+          return;
+        }
+        if(typeof msg.postmessage.Content !== "string"){
+          console.log("typeof msg.content：エラー");
+          return;
+        }
+        if (!msg.postmessage.ID || !msg.postmessage.Content || typeof msg.postmessage.Content !== "string") {
+          console.warn("⚠️ 無効なチャットメッセージ:", msg);
+          return;
+        }        
+        console.log("👤：",msg.postmessage.SenderID, userid);
 
 
-          // ✅ 表示に追加
-          const newMessage: Message = {
-            id: msg.postmessage.ID,
-            sender: msg.postmessage.SenderID,
-            sendername: msg.postmessage.sendername,
-            type: msg.postmessage.Content.includes("/uploads/") ? "image" : "text", // ✅ 自動判別でもOK
-            content: msg.postmessage.Content,
-            allread: false,
-            readcount: 1,
-          };
-          setMessages((prev) => [...prev, newMessage]);
-
-
-          // ✅ 既読リクエスト（自分のメッセージは除外
-          const res = await fetch(`http://localhost:8080/read`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${token}`,
-            },
-            body: JSON.stringify({ login_id: userid, msg_id: msg.postmessage.ID, room_id: roomId}),
-          });
-          if (!res.ok) {
-            throw new Error("未読一覧取得失敗");
-          }
-
-          const data = await res.json();
-          console.log("PP：",data.data.MessageID);  // エラー、undefind
-
-
-        } catch (err) {
-          console.error("❌ WebSocket受信処理エラー:", err);
+        // ✅ 表示に追加
+        const newMessage: Message = {
+          id: msg.postmessage.ID,
+          sender: msg.postmessage.SenderID,
+          sendername: msg.postmessage.sendername,
+          type: msg.postmessage.Content.includes("/uploads/") ? "image" : "text", // ✅ 自動判別でもOK
+          content: msg.postmessage.Content,
+          allread: false,
+          readcount: 1,
         };
+        setMessages((prev) => [...prev, newMessage]);
+
+
+        //console.log("🟣🟣🟣",userid,msg.postmessage.ID,roomId)
+        // ✅ 既読リクエスト（自分のメッセージは除外
+        const res = await fetch(`http://localhost:8080/read`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
+          body: JSON.stringify({ login_id: userid, msg_id: msg.postmessage.ID, room_id: roomId}),
+        });
+        if (!res.ok) {
+          throw new Error("未読一覧取得失敗");
+        }
+
+        const data = await res.json();
+        console.log("PP：",data.data.MessageID);  // エラー、undefind
+
+
+      } catch (err) {
+        console.error("❌ WebSocket受信処理エラー:", err);
       };
-      setSocket(ws); // socketステートにセット
+    };
+    addMessageListener(handleMessage);
+    return() => removeMessageListener(handleMessage);
 
-    } catch (err) {
-      console.error("❌ チャット初期化エラー:", err);
-      setMessages([]);
-    }
-  };
-  if (roomId) {
-    setupChat();
-  }
 
-  // ✅ クリーンアップ処理で WebSocket を確実に閉じる
-  return () => {
-    if (wsRef.current) {
-      console.log("🛑 WebSocketクローズします");
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-  };
-// }, [roomId]);
-}, []);
+  })
 
   // onClickから呼ばれる
   // テキスト送信
   const handleSendMessage = async () => {
     console.log("xxxxxxxxxxxxxxxx:", messages);
+    console.log("currentRoomID", currentRoomIdRef.current)
     if (!message.trim()) {
       alert("メッセージを入力してください");
       return;
@@ -341,8 +490,8 @@ useEffect(() => {
 
     try {
       const newMessage = {
-        roomid: parseInt(roomId as string, 10),
-        senderid: loggedInUserid,
+        room_id: parseInt(roomId as string, 10),
+        sender_id: loggedInUserid,
         content: message.trim(),
       };
 
@@ -361,26 +510,27 @@ useEffect(() => {
       const response = await res.json();
       console.log("📨データ：", response);
       console.log("📨データ ID：", response.data.ID);
-      
-      //const isOnlyEmoji = /^[\p{Emoji}]{1}$/u.test(message.trim());
 
-      const savedMessage: Message = {
-        id: response.data.ID,
-        sender: loggedInUserid ?? 0,
-        sendername: loggedInUser,
-        type: selectedFile ? "image" : "text", // ✅ ファイルがある＝画像
-        content: message.trim(),
-        allread: false,
-        readcount: 0,
-      };
+      // ✅ メンションされたユーザーを抽出（@username を含むかどうか）
+      const mentionedUserIds = members
+      .filter(member => message.includes(`@${member.username}`))
+      .map(member => member.id);
 
-      // WebSocket送信
-      // console.log("sockect：",savedMessage);
-      // if (socket) {
-      //   socket.send(JSON.stringify(savedMessage));
-      // }
+      if (mentionedUserIds.length > 0) {
+        await fetch("http://localhost:8080/addMention", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message_id: parseInt(response.data.ID as string),
+            mentioned_target_id: mentionedUserIds,
+            room_id: parseInt(roomId as string),
+            sender_id: loggedInUserid,
+          }),
+        });
+      }
 
-      // setMessages((prev) => [...prev, savedMessage]);
       setMessage("");
     } catch (err) {
       alert("メッセージ送信エラー");
@@ -428,8 +578,8 @@ useEffect(() => {
       const response = await res.json();
       console.log("アップロード成功: " + response);
 
-      console.log("📨データ：", response);
-      console.log("📨データ ID：", response.data.ID);
+      console.log("📨ファイルデータ：", response);
+      console.log("📨ファイルデータ ID：", response.data.ID);
 
       setMessage("");
       
@@ -445,34 +595,15 @@ useEffect(() => {
     console.log("🔍 content:", messages); // タイプを変更 chat → image
   };
 
-  //メッセージのリアクション、編集、削除
-  type MessageAction = {
-    id: string;
-    text: string;
-    isOwnMessage: boolean;
-  };
-
-  // type ChatMessageProps = {
-  //   messageaction: MessageAction;
-  //   onUpdate: (id: string, newText: string) => void;
-  //   onDelete: (id: string) => void;
-  // };
-
-
-  //リアクション
-  const handleReact = (id: number) => {
-    console.log("リアクション:", id);
-  };
   
-  // 編集    console.log("編集:", id);
+  // 編集
   const handleEdit = async (id: number) => {
     const hoveredMessage = messages.find(msg => msg.id === hoveredMessageId);
-    console.log("-----1：", hoveredMessage);
+    console.log("編集：", id);
 
     if (editText.trim() === "") {
       setIsEditing(false);
       alert("メッセージを入力して下さい");
-      console.log("-----2：", hoveredMessage);
       return;
     }
     try{
@@ -483,9 +614,11 @@ useEffect(() => {
         },
         body: JSON.stringify({content: editText, room_id: roomId}),
       });
-      console.log("-----3：", hoveredMessage);
 
       if(!res.ok) throw new Error("編集失敗");
+
+      const response = await res.json();
+      console.log("-----3：", response);
 
       setMessages((prev) =>
         prev.map((msg) => (msg.id === id ? { ...msg, content: editText } : msg))
@@ -497,19 +630,18 @@ useEffect(() => {
     }
   }
 
-  const handleOnlyDelete = async (id: number) => {
+  // 自分のメッセージを削除
+  const handleMyDelete = async (id: number) => {
     console.log("メッセージ削除📝：", id);
     const confirmed = window.confirm("このメッセージを削除しますか？");
     if (!confirmed) return;
-    
 
     // messagesaから該当メッセージの削除
     setMessages(messages.filter(msg => msg.id !== id));
 
-
-    // 送信取消処理の実装へ
+    // 削除処理の実装へ
     try{
-      const res = await fetch(`http://localhost:8080/deleteOnlyMessage?id=${id}`, { // id = message.id
+      const res = await fetch(`http://localhost:8080/deleteMyMessage?id=${id}`, { // id = message.id
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -542,10 +674,8 @@ useEffect(() => {
       }
 
   }
-  
 
-
-  // 削除 と 取り消し //(msg)?
+  // 送信取消
   const handleDelete = async (id: number) => {
     const hoveredMessage = messages.find(msg => msg.id === hoveredMessageId);
     console.log("メッセージ送信取消📝：", hoveredMessage);
@@ -589,6 +719,76 @@ useEffect(() => {
       }
 
   };
+ 
+  // メンション機能
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setMessage(value);
+    setSelectedFile(null); // ファイル入力をリセット
+
+    if (value.endsWith("@")) {
+      setShowMentionList(true); // モーダルを表示
+    } else {
+      setShowMentionList(false); // 非表示
+    }
+  };
+
+  // メンションのためのルームメンバー一覧取得
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    console.log("ユーザーID：",loggedInUserid)
+    if (!roomId) return;
+    const fetchMembers = async () => {
+      const res = await fetch(`http://localhost:8080/getRoomMembers?room_id=${roomId}`,{
+        method: "POST",
+        headers:{
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({login_id: loggedInUserid}),
+      });
+
+      const data = await res.json();
+      console.log("メンションデータ：",data.members);
+      setmembers(data.members);
+    };
+    fetchMembers();
+  }, [roomId,loggedInUserid]);
+
+  const handleSelectMention = (member: { username: string }) => {
+    setMessage((prev) => prev + member.username + " ");
+    setShowMentionList(false);
+  };
+
+  //リアクション（message_readsのreactionに追加）
+  const handleReact = async (id: number,reaction: string) => {
+    console.log("リアクション:", id);
+    const token = localStorage.getItem("token");
+    const userId = localStorage.getItem("loggedInUserID");
+    
+    const res = await fetch("http://localhost:8080/addReaction", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        message_id: id,
+        user_id: Number(userId),
+        reaction: reaction,
+      }),
+    });  
+
+    if (res.ok) {
+      // ✅ メッセージ一覧を更新
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === id ? { ...msg, reaction: reaction } : msg
+        )
+      );
+    }
+  };
+
 
   return (
     <div style={{
@@ -610,9 +810,27 @@ useEffect(() => {
         maxWidth: "1000px",
         textAlign: "center"
       }}>
+              {/* { (
+      <div style={{
+        position: "fixed",
+        top: "20px",
+        left: "50%",
+        transform: "translateX(-50%)",
+        backgroundColor: "#81c784",
+        color: "white",
+        padding: "12px 24px",
+        borderRadius: "30px",
+        boxShadow: "0 4px 8px rgba(0,0,0,0.2)",
+        zIndex: 9999,
+        fontSize: "16px",
+        fontWeight: "bold"
+      }}>
+        🔔 新着メッセージが届いています
+      </div>
+    )} */}
         <h2 style={{ color: "#388e3c", marginBottom: "15px" }}>ルーム：{groupName ? groupName : "ルーム名がありません"}</h2>
         <div style={{ maxHeight: "500px", overflowY: "scroll", marginBottom: "15px" }}>
-          {messages.length >= 0 ? ( // messagesが空？
+          {messages.length >= 0 ? (
             messages.map((msg, index) => {
               const isMyMessage = String(msg.sender) === String(loggedInUserid);
               return (
@@ -741,18 +959,35 @@ useEffect(() => {
                           right: "10px",
                         }}
                       >
-                        {msg.allread ? "全員既読" : `既読 (${msg.readcount})`}
-                        {/* `既読 (${msg.readcount, -1, 0})`}　← これにしたら、リアルタイム反映が無くなる */}
+                        {msg.allread ? "全員既読" : `既読 ${msg.readcount}`}
                       </div>
                     )}
                   </div>
-              
+                {/* 吹き出しの右にリアクション */}
+                {msg.reaction && (
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "4px",
+                      fontSize: "20px",
+                      marginLeft: "4px",
+                      userSelect: "none",
+                    }}
+                  >
+                    {msg.reaction
+                      .split(",")                       // カンマで分割
+                      .filter((r) => r.trim() !== "")   // 空文字を除外
+                      .map((emoji, i) => (
+                        <span key={i}>{emoji}</span>    // 一つずつ表示
+                      ))}
+                  </div>
+                )}
                   {/* ホバーメニュー */}
                   {hoveredMessageId === msg.id && (
                     <div
                       style={{
                         position: "absolute",
-                        bottom: "-30px",
+                        bottom: "-26px",
                         right: isMyMessage ? "0" : "auto",
                         left: isMyMessage ? "auto" : "0",
                         backgroundColor: "#fff",
@@ -769,10 +1004,9 @@ useEffect(() => {
                         <>
                           <span 
                           style={{
-                            fontSize: "13px",
+                            fontSize: "10px",
                             cursor: "pointer",
                           }}
-                          //  onClick={() => handleEdit(msg.id)}>編集</span>
                           onClick={() => {
                             setEditingId(msg.id);
                             setEditText(msg.content);
@@ -780,21 +1014,23 @@ useEffect(() => {
                           >編集</span>
                           <span
                           style={{
-                            fontSize: "13px",
+                            fontSize: "10px",
                           }}
-                          onClick={() => handleOnlyDelete(msg.id)}>削除</span>
+                          onClick={() => handleMyDelete(msg.id)}>削除</span>
                           <span
                           style={{
-                            fontSize: "13px",
+                            fontSize: "10px",
                           }}
                           onClick={() => handleDelete(msg.id)}>送信取消</span>
                         </>
                       ) : (
-                        <span 
-                        style={{
-                          fontSize: "13px",
-                        }}
-                        onClick={() => handleReact(msg.id)}>👍</span>
+                        <span
+                          style={{ fontSize: "13px", cursor: "pointer" }}
+                          onClick={() => handleReact(msg.id, "👍")}
+                        >
+                          👍
+                        </span>
+                        
                       )}
                     </div>
                   )}
@@ -808,7 +1044,7 @@ useEffect(() => {
             <p>メッセージがありません</p>
           )}
         </div>
-                <div style={{
+        <div style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
@@ -818,7 +1054,7 @@ useEffect(() => {
         }}>
           {/* 左下：絵文字とファイル */}
           <div style={{ display: "flex", gap: "10px" }}>
-            <button onClick={() => setShowEmojiPicker(prev => !prev)}> ☺︎ </button>
+            <button onClick={() => setShowEmojiPicker(prev => !prev)}> 😊 </button>
             <input
               type="file"
               onChange={handleFileChange}
@@ -832,10 +1068,7 @@ useEffect(() => {
             type="text"
             placeholder="メッセージを入力"
             value={selectedFile ? selectedFile.name : message}
-            onChange={(e) => {
-              setMessage(e.target.value);
-              setSelectedFile(null); // テキスト入力されたらファイルリセット
-            }}
+            onChange={ handleInputChange }
             style={{
               flex: 1,
               margin: "0 10px",
@@ -844,6 +1077,28 @@ useEffect(() => {
               border: "2px solid #ccc"
             }}
           />
+
+          {/* メンション機能 */}
+          {showMentionList && (
+            <div style={{ 
+              position: "absolute", 
+              bottom: "60px", 
+              left: "300px", 
+              backgroundColor: "#fffde7", 
+              borderRadius: "20px",
+              zIndex: 200 
+              }}>
+              {members.map((member) => (
+                <div
+                  key={member.id}
+                  style={{ padding: "5px 10px", cursor: "pointer", color: "blue" }}
+                  onClick={() => handleSelectMention(member)}
+                >
+                  @{member.username}
+                </div>
+              ))}
+            </div>
+            )}
 
           {/* 右：送信 */}
           <button onClick={() => {

@@ -14,12 +14,12 @@ type TsUser struct {
 
 type TsMessage struct {
 	ID           int       `gorm:"primaryKey"`
-	RoomID       int       `gorm:"not null;index"`
-	SenderID     int       `gorm:"not null;index"`
-	Content      string    `gorm:"type:text"`
-	CreatedAt    time.Time `gorm:"autoCreateTime"`
-	UpdatedAt    time.Time `gorm:"autoUpdateTime"`
-	ThreadRootID int       `gorm:"index"` // 親メッセージID（スレッド）
+	RoomID       int       `json:"room_id"`
+	SenderID     int       `json:"sender_id"`
+	Content      string    `json:"content"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	ThreadRootID int       `json:"thread_root_id"`
 }
 
 type TsResponse struct {

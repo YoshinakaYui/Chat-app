@@ -67,16 +67,16 @@ func EditMessageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 既読を他のクライアントへブロードキャスト
-	joinBroadcast := map[string]interface{}{
+	messageBroadcast := map[string]interface{}{
 		"type":      "updataMessage",
 		"messageid": id,
-		"roomId":    reqBody.RoomID,
+		"room_id":   reqBody.RoomID,
 		"content":   reqBody.Content,
 	}
-	joinJSON, _ := json.Marshal(joinBroadcast)
+	messageJSON, _ := json.Marshal(messageBroadcast)
 	//log.Println("NNN：", joinJSON)
 
-	broadcast <- joinJSON
+	broadcast <- messageJSON
 
 	log.Println("🟡 メッセージ更新成功:", id)
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -87,8 +87,8 @@ func EditMessageHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // メッセージ削除
-func DeleteOnlyMessageHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("🟢DeleteOnlyMessageHandler：スタート")
+func DeleteMyMessageHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("DeleteMyMessageHandler")
 	utils.EnableCORS(w)
 
 	// メソッド確認
@@ -107,6 +107,11 @@ func DeleteOnlyMessageHandler(w http.ResponseWriter, r *http.Request) {
 	idStr := r.URL.Query().Get("id")
 	if idStr == "" {
 		http.Error(w, "IDが指定されていません", http.StatusBadRequest)
+		return
+	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "ルームIDが不正です", http.StatusBadRequest)
 		return
 	}
 	log.Println("🟢メッセージID：", idStr)
@@ -133,33 +138,44 @@ func DeleteOnlyMessageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Println("🟢-222：")
 
-	roomid, err := strconv.Atoi(reqBody.RoomID)
-	if err != nil {
-		http.Error(w, "ルームIDが不正です", http.StatusBadRequest)
-		return
-	}
-	//userid, err := strconv.Atoi(reqBody.UserID)
+	//roomid, err := strconv.Atoi(reqBody.RoomID)
 	// if err != nil {
-	// 	http.Error(w, "ユーザーIDが不正です", http.StatusBadRequest)
+	// 	http.Error(w, "ルームIDが不正です", http.StatusBadRequest)
 	// 	return
 	// }
+
 	log.Println("🟢-333：")
 
-	// メッセージの保存
-	message := db.Message{
-		RoomID:    roomid,
-		SenderID:  reqBody.UserID,
-		Content:   "DeleteOnlyMessage:" + idStr,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+	// // メッセージの保存 // message_id, user_id, atでテーブル作る
+	// message := db.Message{
+	// 	RoomID:    roomid,
+	// 	SenderID:  reqBody.UserID,
+	// 	Content:   "DeleteOnlyMessage:" + idStr,
+	// 	CreatedAt: time.Now(),
+	// 	UpdatedAt: time.Now(),
+	// }
+
+	// // データベースに保存
+	// if err := db.DB.Create(&message).Error; err != nil {
+	// 	log.Println("メッセージ保存エラー:", err)
+	// 	http.Error(w, "メッセージ保存失敗", http.StatusInternalServerError)
+	// 	return
+	// }
+
+	delete := db.DeletedMessage{
+		MessageID: id,
+		UserID:    reqBody.UserID,
+		DeletedAt: time.Now(),
 	}
 
 	// データベースに保存
-	if err := db.DB.Create(&message).Error; err != nil {
+	if err := db.DB.Create(&delete).Error; err != nil {
 		log.Println("メッセージ保存エラー:", err)
 		http.Error(w, "メッセージ保存失敗", http.StatusInternalServerError)
 		return
 	}
+	log.Println("🟢deleteデータベースに保存完了")
+
 }
 
 // メッセージ送信取消
@@ -267,7 +283,7 @@ func DeleteMessageHandler(w http.ResponseWriter, r *http.Request) {
 	joinBroadcast := map[string]interface{}{
 		"type":      "updataMessage",
 		"messageid": id,
-		"roomId":    reqBody.RoomID,
+		"room_id":   reqBody.RoomID,
 		"content":   "（このメッセージは削除されました）",
 	}
 	joinJSON, _ := json.Marshal(joinBroadcast)
@@ -279,16 +295,11 @@ func DeleteMessageHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("削除成功"))
-
-	// w.WriteHeader(http.StatusOK)
-	// json.NewEncoder(w).Encode(map[string]interface{}{
-	// 	"status": "success",
-	// })
 }
 
 // メッセージリアクション
-func ReactionMessageHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("🔵EditMessageHandler：スタート")
+func ReactionHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("🔵ReactionHandler：スタート")
 	utils.EnableCORS(w)
 
 	// メソッド確認
@@ -296,26 +307,107 @@ func ReactionMessageHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	if r.Method != http.MethodPut {
+	if r.Method != http.MethodPost {
 		http.Error(w, "メソッドが許可されていません", http.StatusMethodNotAllowed)
 		return
 	}
 	log.Println("🔵メソッド：", r.Method)
 
-	idStr := r.URL.Query().Get("id")
-	if idStr == "" {
-		http.Error(w, "IDが指定されていません", http.StatusBadRequest)
-		return
+	var req struct {
+		MessageID int    `json:"message_id"`
+		UserID    int    `json:"user_id"`
+		Reaction  string `json:"reaction"`
 	}
 
-	id, err := strconv.Atoi(idStr)
-	log.Println("🔵id：", id)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Println("🔵デコード：", err)
+		http.Error(w, "リクエスト形式が不正", http.StatusBadRequest)
+		return
+	}
+	log.Println("🔵-111：")
+
+	//var read db.MessageReads
+
+	err := db.DB.Model(&db.MessageReads{}).
+		Where("message_id = ? AND user_id = ?", req.MessageID, req.UserID).
+		Updates(map[string]interface{}{
+			"reaction": req.Reaction,
+			"read_at":  time.Now(),
+		}).Error
+
 	if err != nil {
-		http.Error(w, "無効なID形式です", http.StatusBadRequest)
+		log.Println("リアクション更新エラー:", err)
+		http.Error(w, "リアクションの更新に失敗しました", http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 	w.Write([]byte("リアクション成功"))
+	log.Println("🔵リアクション成功")
+}
 
+// メンションのためのルームメンバー一覧取得
+func GetRoomMembersHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("🟢GetRoomMembersHandler：スタート")
+	w.Header().Set("Content-Type", "application/json")
+
+	utils.EnableCORS(w)
+
+	// メソッド確認
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	log.Println("🟢GetRoomMembers メソッド：", r.Method)
+	if r.Method != http.MethodPost {
+		http.Error(w, "メソッドが許可されていません", http.StatusMethodNotAllowed)
+		return
+	}
+
+	roomIDStr := r.URL.Query().Get("room_id")
+	roomID, err := strconv.Atoi(roomIDStr)
+	if err != nil {
+		http.Error(w, "不正なルームIDです", http.StatusBadRequest)
+		return
+	}
+
+	// リクエストボディのパース
+	var req struct {
+		LoginUserID int `json:"login_id"`
+	}
+
+	log.Println("🟢GetRoomMembers ユーザーID：", req.LoginUserID)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Println("🟢GetRoomMembers JSON：", req)
+		http.Error(w, "JSONの解析に失敗しました", http.StatusBadRequest)
+		return
+	}
+
+	log.Println("🟢GetRoomMembers-1：", req.LoginUserID)
+	type User struct {
+		ID       int    `json:"id"`
+		Username string `json:"username"`
+	}
+
+	var members []User
+
+	err = db.DB.
+		Table("users").
+		Joins("JOIN room_members ON users.id = room_members.user_id").
+		Where("room_members.room_id = ? AND users.id <> ?", roomID, req.LoginUserID).
+		Select("users.id, users.username").
+		Scan(&members).Error
+
+	if err != nil {
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+	log.Println("🟢GetRoomMembers-2")
+	log.Println("🟢GetRoomMembers：", members)
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"members": members,
+	})
 }
