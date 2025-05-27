@@ -153,25 +153,6 @@ func GetMessagesHandler(w http.ResponseWriter, r *http.Request) {
 
 	var messages []SendMessages
 
-	// result := db.DB.Table("messages AS m").
-	// 	Select(`
-	// 	m.id AS message_id,
-	// 	COALESCE(a.file_name, m.content) AS content,
-	// 	m.created_at,
-	// 	m.sender_id AS sender,
-	// 	u.username AS sendername,
-	// 	COUNT(DISTINCT mr.user_id) = COUNT(DISTINCT rm.user_id) AS allread,
-	// 	COUNT(DISTINCT mr.user_id) AS readcount`).
-	// 	Joins("JOIN users AS u ON m.sender_id = u.id").
-	// 	Joins("LEFT JOIN message_attachments AS a ON m.id = a.message_id").
-	// 	Joins("JOIN room_members AS rm ON m.room_id = rm.room_id").
-	// 	Joins("LEFT JOIN message_reads AS mr ON mr.message_id = m.id AND mr.user_id = rm.user_id").
-	// 	Joins("LEFT JOIN deleted_messages AS dm ON dm.message_id = m.id AND dm.user_id = ?", user.Userid).
-	// 	Where("m.room_id = ? AND dm.id IS NULL", roomID).
-	// 	Group("m.id, a.file_name, m.content, m.created_at, m.sender_id, u.username").
-	// 	Order("m.created_at ASC").
-	// 	Scan(&messages)
-
 	// メッセージID、内容、作成時、送信者ID、送信者、既読フラグ+カウント、リアクション
 	selectFields := `
 	m.id AS message_id,
@@ -296,7 +277,7 @@ func GetRoomMembersByUsers(user1ID int, user2ID int) *db.ChatRoom {
 	return &chatroom
 }
 
-// 既読未読処理
+// 未読処理
 func UpdataMessageHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("🟠UpdataMessageHandler：スタート")
 	utils.EnableCORS(w)
@@ -372,6 +353,7 @@ func UpdataMessageHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// 既読のブロードキャスト
 func BroadcastReadCountsToRoom(roomID int, unreadIDs []int) {
 	type SendMessages struct {
 		RoomID    int  `json:"room_id" gorm:"column:room_id"`
@@ -578,9 +560,8 @@ func MentionHandler(w http.ResponseWriter, r *http.Request) {
 		RoomID          int   `json:"room_id"`
 		SenderID        int   `json:"sender_id"`
 	}
-	log.Println("ccccccccccc", msg)
 
-	//utils.JsonRawDataDisplay(w, r)
+	// utils.JsonRawDataDisplay(w, r)
 	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
 		log.Printf("JSONデコードエラー: %v", err)
 		http.Error(w, "リクエスト形式が不正", http.StatusBadRequest)
@@ -596,169 +577,79 @@ func MentionHandler(w http.ResponseWriter, r *http.Request) {
 		db.DB.Create(&mention)
 	}
 
+	// type MentionUnread struct {
+	// 	MessageID int       `json:"message_id"`
+	// 	UserID    int       `json:"user_id"`
+	// 	RoomID    int       `json:"room_id"`
+	// 	Content   string    `json:"content"`
+	// 	CreatedAt time.Time `json:"created_at"`
+	// }
+
+	// var mentions []MentionUnread
+
+	// 未読のメンション通知
+	type UnreadMentionCount struct {
+		UserID         int   `json:"user_id"`
+		RoomID         int   `json:"room_id"`
+		UnreadMentions int64 `json:"unread_mentions"`
+	}
+
+	var mentions []UnreadMentionCount
+
+	err := db.DB.
+		Table("mentions AS m").
+		Select("msg.room_id, m.mentioned_target_id AS user_id, COUNT(*) AS unread_mentions").
+		Joins("JOIN messages AS msg ON msg.id = m.message_id").
+		Joins("LEFT JOIN message_reads AS mr ON mr.message_id = m.message_id AND mr.user_id = m.mentioned_target_id").
+		Where("m.mentioned_target_id = ? AND mr.message_id IS NULL", msg.MentionedUserID).
+		Group("msg.room_id, m.mentioned_target_id").
+		Scan(&mentions).Error
+
+	// err := db.DB.
+	// Raw(`
+	// 	SELECT
+	// 	  m.room_id,
+	// 	  me.mentioned_target_id AS user_id,
+	// 	  COUNT(*) AS unread_mentions
+	// 	FROM mentions me
+	// 	JOIN messages m ON m.id = me.message_id
+	// 	WHERE me.mentioned_target_id = ?
+	// 	  AND NOT EXISTS (
+	// 	    SELECT 1
+	// 	    FROM message_reads mr
+	// 	    WHERE mr.message_id = me.message_id
+	// 	      AND mr.user_id = me.mentioned_target_id
+	// 	  )
+	// 	GROUP BY m.room_id, me.mentioned_target_id
+	// `, msg.MentionedUserID).
+	// Scan(&mentions).Error
+
+	if err != nil {
+		log.Println("❌ メンション未読取得失敗:", err)
+	}
+
+	log.Println("🟢-DD", mentions)
+
+	// メッセージを他のクライアントへブロードキャスト
+	if len(mentions) != 0 {
+		// メンションをクライアントへブロードキャスト
+		mentionBroadcast := map[string]interface{}{
+			"type":    "mention",
+			"Mention": mentions,
+			"room_id": msg.RoomID,
+		}
+		mentionJSON, _ := json.Marshal(mentionBroadcast)
+		// log.Println("NNN：", mentionJSON)
+
+		var decoded map[string]interface{}
+		err2 := json.Unmarshal(mentionJSON, &decoded)
+		if err2 != nil {
+			log.Println("JSONデコード失敗:", err2)
+		}
+		log.Println("🟢メンションデコード：", decoded)
+
+		broadcast <- mentionJSON
+	}
+
 	log.Println("メンション保存完了")
 }
-
-// func DeleteMessageHandler(w http.ResponseWriter, r *http.Request) {
-// 	log.Println("🟢DeleteMessageHandler：スタート")
-// 	utils.EnableCORS(w)
-
-// 	type Message struct {
-// 		ID uint `gorm:"primaryKey"`
-// 		// 他のフィールドは省略
-// 	}
-
-// 	type MessageAttachment struct {
-// 		ID        uint `gorm:"primaryKey"`
-// 		MessageID uint
-// 	}
-
-// 	type Mention struct {
-// 		ID        uint `gorm:"primaryKey"`
-// 		MessageID uint
-// 	}
-
-// 	type MessageRead struct {
-// 		ID        uint `gorm:"primaryKey"`
-// 		MessageID uint
-// 	}
-
-// 	// メソッド確認
-// 	if r.Method == http.MethodOptions {
-// 		w.WriteHeader(http.StatusOK)
-// 		return
-// 	}
-// 	if r.Method != http.MethodDelete {
-// 		http.Error(w, "メソッドが許可されていません", http.StatusMethodNotAllowed)
-// 		return
-// 	}
-// 	log.Println("🟢メソッド：", r.Method)
-
-// 	idStr := r.URL.Query().Get("id")
-// 	if idStr == "" {
-// 		http.Error(w, "IDが指定されていません", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	id, err := strconv.Atoi(idStr)
-// 	log.Println("🟢id：", id)
-// 	if err != nil {
-// 		http.Error(w, "無効なID形式です", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	// トランザクション開始
-// 	tx := db.DB.Begin()
-// 	if tx.Error != nil {
-// 		log.Println("トランザクション開始失敗:", tx.Error)
-// 		return
-// 	}
-// 	defer tx.Rollback()
-// 	log.Println("🟢：AA")
-
-// 	// 1. message_attachments
-// 	if err := tx.Where("message_id = ?", id).Delete(&MessageAttachment{}).Error; err != nil {
-// 		tx.Rollback()
-// 		http.Error(w, "message_attachments 削除失敗", http.StatusInternalServerError)
-// 		return
-// 	}
-// 	log.Println("🟢：BB")
-// 	// 2. mentions
-// 	if err := tx.Where("message_id = ?", id).Delete(&Mention{}).Error; err != nil {
-// 		tx.Rollback()
-// 		http.Error(w, "mentions 削除失敗", http.StatusInternalServerError)
-// 		return
-// 	}
-// 	log.Println("🟢：CC")
-// 	// 3. message_reads
-// 	if err := tx.Where("message_id = ?", id).Delete(&MessageRead{}).Error; err != nil {
-// 		tx.Rollback()
-// 		http.Error(w, "message_reads 削除失敗", http.StatusInternalServerError)
-// 		return
-// 	}
-// 	log.Println("🟢：DD")
-// 	// 4. messages(本体)
-// 	if err := tx.Delete(&Message{}, id).Error; err != nil {
-// 		tx.Rollback()
-// 		http.Error(w, "messages 削除失敗", http.StatusInternalServerError)
-// 		return
-// 	}
-// 	log.Println("🟢：EE")
-// 	if err := tx.Commit().Error; err != nil {
-// 		http.Error(w, "コミット失敗", http.StatusInternalServerError)
-// 		return
-// 	}
-// 	fmt.Fprintf(w, "メッセージ %d を削除しました", id)
-
-// 	log.Println("🟢DeleteMessageHandler：エンド")
-
-// 	w.WriteHeader(http.StatusOK)
-// 	w.Write([]byte("削除成功"))
-
-// 	// w.WriteHeader(http.StatusOK)
-// 	// json.NewEncoder(w).Encode(map[string]interface{}{
-// 	// 	"status": "success",
-// 	// })
-// }
-
-// // メッセージ編集
-// func EditMessageHandler(w http.ResponseWriter, r *http.Request) {
-// 	log.Println("🟡EditMessageHandler：スタート")
-// 	utils.EnableCORS(w)
-
-// 	// メソッド確認
-// 	if r.Method == http.MethodOptions {
-// 		w.WriteHeader(http.StatusOK)
-// 		return
-// 	}
-// 	if r.Method != http.MethodPut {
-// 		http.Error(w, "メソッドが許可されていません", http.StatusMethodNotAllowed)
-// 		return
-// 	}
-// 	log.Println("🟡メソッド：", r.Method)
-
-// 	idStr := r.URL.Query().Get("id")
-// 	if idStr == "" {
-// 		http.Error(w, "IDが指定されていません", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	id, err := strconv.Atoi(idStr)
-// 	log.Println("🟡id：", id)
-// 	if err != nil {
-// 		http.Error(w, "無効なID形式です", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	// リクエストボディのパース
-// 	var reqBody struct {
-// 		Content string `json:"content"`
-// 	}
-// 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-// 		http.Error(w, "JSONの解析に失敗しました", http.StatusBadRequest)
-// 		return
-// 	}
-// 	if reqBody.Content == "" {
-// 		http.Error(w, "contentが空です", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	// 更新処理
-// 	if err := db.DB.Table("messages").
-// 		Where("id = ?", id).
-// 		UpdateColumns(map[string]interface{}{
-// 			"content":    reqBody.Content,
-// 			"updated_at": time.Now(),
-// 		}).Error; err != nil {
-// 		log.Println("更新失敗:", err)
-// 		http.Error(w, "更新に失敗しました", http.StatusInternalServerError)
-// 		return
-// 	}
-
-// 	log.Println("🟡 メッセージ更新成功:", id)
-// 	json.NewEncoder(w).Encode(map[string]interface{}{
-// 		"status":  "success",
-// 		"message": "メッセージを更新しました",
-// 	})
-
-// }

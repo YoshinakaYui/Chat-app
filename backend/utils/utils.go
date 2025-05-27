@@ -26,3 +26,25 @@ func JsonRawDataDisplay(w http.ResponseWriter, r *http.Request) {
 	log.Println("🔍 生のJSONデータ:", string(body))
 
 }
+
+// // メンションをクライアントへブロードキャスト
+// func BroadcastCreateRoom(memberlist []int, roomname string, roomid int) {
+// 	roomBroadcast := map[string]interface{}{
+// 		"type":       "createRoom",
+// 		"memberlist": memberlist,
+// 		"roomname":   roomname,
+// 		"room_id":    roomid,
+// 	}
+// 	roomJSON, _ := json.Marshal(roomBroadcast)
+// 	// log.Println("NNN：", mentionJSON)
+
+// 	var decoded map[string]interface{}
+// 	err2 := json.Unmarshal(roomJSON, &decoded)
+// 	if err2 != nil {
+// 		log.Println("JSONデコード失敗:", err2)
+// 	}
+// 	log.Println("🟢メンションデコード：", decoded)
+
+// 	broadcast <- roomJSON
+
+// }

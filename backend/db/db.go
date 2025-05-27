@@ -29,12 +29,18 @@ type ChatRoom struct {
 }
 
 type RoomInfo struct {
-	ID          int       `gorm:"column:id" json:"id"`
-	RoomName    string    `gorm:"column:room_name" json:"room_name"`
-	IsGroup     int       `gorm:"column:is_group" json:"is_group"`
-	CreatedAt   time.Time `gorm:"column:created_at" json:"created_at"`
-	UpdatedAt   time.Time `gorm:"column:updated_at" json:"updated_at"`
-	UnreadCount int       `gorm:"column:unread_count" json:"unread_count"`
+	ID                 int       `gorm:"column:id" json:"id"`
+	RoomName           string    `gorm:"column:room_name" json:"room_name"`
+	IsGroup            int       `gorm:"column:is_group" json:"is_group"`
+	CreatedAt          time.Time `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt          time.Time `gorm:"column:updated_at" json:"updated_at"`
+	UnreadCount        int       `gorm:"column:unread_count" json:"unread_count"`
+	UnreadMentionCount int       `json:"unread_mention_count" gorm:"unread_mention_count"`
+}
+
+type MentionCount struct {
+	RoomID             int `json:"room_id" gorm:"room_id"`
+	UnreadMentionCount int `json:"unread_mention_count" gorm:"unread_mention_count"`
 }
 type RoomMember struct {
 	ID       int `gorm:"primaryKey"`
@@ -78,8 +84,8 @@ type MessageReadCount struct {
 }
 
 type Mentions struct {
-	MessageID         int `json:"message_id"`
-	MentionedTargetID int `json:"mentioned_target_id"`
+	MessageID         int `json:"message_id" gorm:"message_id"`
+	MentionedTargetID int `json:"mentioned_target_id" gorm:"mentioned_target_id"`
 }
 
 type DeletedMessage struct {
@@ -196,8 +202,8 @@ func GetMyGroupRooms(userid int) ([]RoomInfo, error) {
 	log.Println("GetMyGroupRooms")
 	var rooms []RoomInfo
 
-	// GORMクエリ
-	result := DB.Table("chat_rooms cr").
+	// GORMクエリ（unread_count, room_id）
+	err := DB.Table("chat_rooms cr").
 		Select(`cr.*, COUNT(m.id) AS unread_count`).
 		Joins("JOIN room_members rm ON cr.id = rm.room_id").
 		Joins(`
@@ -211,9 +217,36 @@ func GetMyGroupRooms(userid int) ([]RoomInfo, error) {
 		Order("cr.id ASC").
 		Scan(&rooms).Error
 
-	if result != nil {
-		fmt.Println("エラー:", result)
-		return nil, fmt.Errorf("ルーム一覧取得エラー：%v", result)
+	if err != nil {
+		fmt.Println("エラー:", err)
+		return nil, fmt.Errorf("ルーム一覧取得エラー：%v", err)
 	}
+
+	var mentions []MentionCount
+	//log.Println("🟣🟣userid：", userid)
+
+	err1 := DB.Table("mentions AS m").
+		Select("msg.room_id, COUNT(*) AS unread_mention_count").
+		Joins("JOIN messages AS msg ON msg.id = m.message_id").
+		Joins("LEFT JOIN message_reads AS mr ON mr.message_id = m.message_id AND mr.user_id = m.mentioned_target_id").
+		Where("m.mentioned_target_id = ? AND mr.message_id IS NULL", userid).
+		Group("msg.room_id").
+		Order("msg.room_id").
+		Scan(&mentions).Error
+
+	if err1 != nil {
+		log.Println("❌ 未読メンション件数の取得失敗:", err1)
+	}
+	for i := range rooms {
+		for _, m := range mentions {
+			if rooms[i].ID == m.RoomID {
+				rooms[i].UnreadMentionCount = m.UnreadMentionCount // ✅ ← 新しいフィールドに保存
+				break
+			}
+		}
+	}
+
+	//log.Println("マージした結果", rooms)
+	//log.Println("🟣🟣db.mentions：", mentions)
 	return rooms, nil
 }

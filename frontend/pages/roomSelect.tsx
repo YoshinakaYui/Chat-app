@@ -14,7 +14,7 @@ interface Room {
   id: number;
   room_name: string;
   unread_count: number;
-  //mention: number;// TODO:メンション
+  unread_mention_count: number; // ← これが正しく認識されていればOK
   is_group: number;
 }
 interface Member {
@@ -39,9 +39,9 @@ export default function RoomSelect() {
   const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
   const router = useRouter();
   //const socket = useWebSocket();
+
+
   
-  // const [mentionMessage, setMentionMessage] = useState<string | null>(null);
-  const [mentionedRooms, setMentionedRooms] = useState<number[]>([1, 5]); // メンション対象のroom.id
 
 
   // ルーム作成モーダル
@@ -77,7 +77,7 @@ export default function RoomSelect() {
       } 
       closeModal();
       alert("グループを作成しました");
-      window.location.href = location.pathname;
+      //window.location.href = location.pathname;
     } catch (err) {
       if (err instanceof Error) {
         console.error("エラー:", err.message);
@@ -108,7 +108,7 @@ export default function RoomSelect() {
       } 
       closePersonalModal();
       alert("ルームを作成しました");
-      window.location.href = location.pathname;
+      //window.location.href = location.pathname;
     } catch (err) {
       if (err instanceof Error) {
         console.error("エラー:", err.message);
@@ -153,7 +153,6 @@ export default function RoomSelect() {
       const loginUserID = localStorage.getItem("loggedInUserID");
       const i_loginUserID = loginUserID ? parseInt(loginUserID, 10) : null;
 
-
       console.log("▶︎▶︎▶︎▶︎▶︎▶︎▶︎",msg); // ロジックを書く
       console.log("ルーム選択▶︎▶︎▶︎▶︎▶︎▶︎▶︎"); // ロジックを書く
 
@@ -163,7 +162,6 @@ export default function RoomSelect() {
           user_id: number;
           room_id: number;
           unread_count: number;
-          //mention: number;//TODO:メンション
         }
 
         // SendMessagesをMapに変換して高速アクセス
@@ -186,7 +184,6 @@ export default function RoomSelect() {
               return {
                 ...personallist,
                 unread_count: readInfo.unread_count
-                // :メンション
               };
             }
             return personallist;
@@ -203,14 +200,99 @@ export default function RoomSelect() {
               return {
                 ...roomlist,
                 unread_count: readInfo.unread_count
-                // TODO:メンション
+              };
+            }
+            return roomlist;
+          })
+        );
+      }
+      
+      if (msg.type === "mention") {
+        console.log("🔔 メンション通知受信:", msg);
+        interface SendMessages {
+          user_id: number;
+          room_id: number;
+          //unread_count: number;
+          unread_mention_count: number;
+        }
+
+        // const loginUserID = localStorage.getItem("loggedInUserID");
+        // const userID = loginUserID ? parseInt(loginUserID, 10) : null;
+        const mentionMap = new Map<number, SendMessages>();
+        for (const sm of msg.Mention) {
+
+          if(i_loginUserID === sm.user_id){
+            mentionMap.set(sm.room_id, sm);
+          }
+        }
+
+        setRooms((prevRooms) =>
+          prevRooms.map(roomlist => {
+            console.log("GroupRoom.mapスタート ");
+            const readInfo = mentionMap.get(roomlist.id);
+            if (readInfo) {
+              console.log("readInfo:", roomlist.id, " > ", roomlist.room_name, " > ", roomlist.unread_mention_count);
+              return {
+                ...roomlist,
+                unread_mention_count: readInfo.unread_mention_count
               };
             }
             return roomlist;
           })
         );
 
+      }
 
+      if(msg.type === "createroom"){
+        console.log("🔔 ルーム作成通知受信:", msg);
+
+        // 自分に、該当ルームか確認
+        console.log("i_loginUserID:", i_loginUserID, "msg.memberlist",msg.memberlist);
+        if (!(msg.memberlist.includes(i_loginUserID))){
+          console.log("ルームが作成されましたけど、無関係");
+          return
+        }
+
+        const newRoom: Room = {
+          id: msg.room_id,
+          room_name: msg.roomname,
+          unread_count: 0,
+          unread_mention_count: 0,// ← これが正しく認識されていればOK
+          is_group: msg.is_group,
+        };
+
+        if (msg.is_group === 0){
+          setPersonals((prev) => {
+            const exists = prev.some((personal) => personal.id === msg.room_id);
+            if (exists) return prev;
+          
+            return [...prev, newRoom];
+          });
+        }
+
+        if (msg.is_group == 1){
+          console.log("rooms",rooms);
+          setRooms((prev) => {
+            const exists = prev.some((room) => room.id === msg.room_id);
+            if (exists) return prev;
+          
+            return [...prev, newRoom];
+          });
+        }
+      }
+
+      if (msg.type === "leaveroom"){
+        console.log("🔔 退出通知受信:", msg);
+
+        console.log("i_loginUserID:", i_loginUserID, "msg.userids",msg.userids);
+        if (!(msg.userids.includes(i_loginUserID))){
+          console.log("退出するルームがありません");
+          return
+        }
+        setPersonals((prevPersonals) =>
+          prevPersonals.filter((personal) => personal.id !== msg.room_id)
+        );
+        
       }
 
 
@@ -220,7 +302,7 @@ export default function RoomSelect() {
     return() => removeMessageListener(handleMessage);
   }, []);
 
-  // ルーム作成のときのユーザー一覧(モーダル)の取得  // socketのonmessage（onmessageを違うファイルでも作れるのか？タイプ）
+  // ルーム作成のときのユーザー一覧(モーダル)の取得
   useEffect(() => {
     const fetchUsers = async () => {
       try {
@@ -334,6 +416,7 @@ export default function RoomSelect() {
           throw new Error("ルーム一覧取得失敗");
         }
 
+        //console.log("🟣生jsonデータ：",res.json);
         const data = await res.json();
         console.log("🟣ルーム取得：",data)
         if (Array.isArray(data)) {
@@ -345,48 +428,6 @@ export default function RoomSelect() {
     };
     fetchRooms();
   }, []);
-
-
-  
-  // ユーザーを選択して個別ルームへ (使ってない)
-  const handleSelectUser = async (user: User) => {
-    try {
-      const userIDStr = localStorage.getItem("loggedInUserID");
-      if (!userIDStr) {
-        alert("ログインされていません");
-        router.push("/top");
-        return;
-      }
-      const userID = parseInt(userIDStr, 10);
-      const selectedUserID = user.id;
-      setSelectedUser(user);
-
-      const token = localStorage.getItem("token");
-      const res = await fetch(`http://localhost:8080/createRooms`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({ user1: userID, user2: selectedUserID}),
-      });
-      
-
-      if (!res.ok) {
-        throw new Error("チャットルーム作成失敗");
-      }
-      const data = await res.json();
-      if (data && data.roomId) {
-        localStorage.setItem("token", token ? token : "");
-        localStorage.setItem("roomName", data.roomId);
-  
-      } else {
-        alert("ルームIDが取得できませんでした");
-      }
-    } catch (err) {
-      console.error("ルーム遷移エラー：", err);
-    }
-  };
 
   // ルームを選択してルームへ
   const handleSelectRoom = async (room: Room) => {
@@ -420,31 +461,6 @@ export default function RoomSelect() {
     }
   };
 
-  // ルーム作成時にもリアルタイム反映をさせた
-  useEffect(() => {
-    // // WebSocket接続の処理
-    // const socket = connectWebSocket((message: any) => {
-    //   console.log("受信したメッセージ:", message);
-    //   const newRoom = JSON.parse(message);
-
-    //   // 新しいルームがグループルームの場合
-    //   if (newRoom.is_group === 1) {
-    //     setRooms((prevRooms) => [...prevRooms, newRoom]); // グループルームを追加
-    //   } else {
-    //     setPersonals((prevPersonals) => [...prevPersonals, newRoom]); // 個別ルームを追加
-    //   }
-    // });
-
-    // socket.onopen = () => {
-    //   console.log("WebSocket接続成功！");
-    // };
-
-    // return () => {
-    //   socket.close();
-    // };
-  }, []); // 空の依存配列なので、一度だけ実行される
-
-
   const handleLogout = () => {
     //socket?.close();
     localStorage.removeItem("loggedInUser");
@@ -452,12 +468,6 @@ export default function RoomSelect() {
     alert("ログアウトしました");
     router.push("/top");
   };
-
-// メンション通知を受けたときにこれを呼ぶだけ
-// const showMentionNotification = (text: string) => {
-//   setTimeout(() => setMentionMessage(null), 5000);
-// };
-// showMentionNotification("@ハリー からメンションされました！");
 
   return (
     <>
@@ -533,6 +543,7 @@ export default function RoomSelect() {
                 >
                 <div style={{ backgroundColor: "#81c784", width: "10px", height: "10px", borderRadius: "50%", marginRight: "15px" }}></div>
                   <span style={{ color: "#333", fontSize: "18px", textAlign: "left" }}>{personal.room_name}</span>
+                    {/* 未読通知：個別チャット */}
                     {personal.unread_count != 0 && (
                       <div style={{   
                         backgroundColor: '#d02f2f',
@@ -596,8 +607,8 @@ export default function RoomSelect() {
                 >
                   <div style={{ backgroundColor: "#81c784", width: "10px", height: "10px", borderRadius: "50%", marginRight: "15px" }}></div>
                   <span style={{ color: "#333", fontSize: "18px", textAlign: "left" }}>{room.room_name}</span>
-                  {(
-                    // TODO:メンション
+                  {/* {mentionCounts.get(room.id) !== undefined && mentionCounts.get(room.id)! > 0 &&( */}
+                  {room.unread_mention_count != 0 && (
                     <div style={{   
                       backgroundColor: '#426AB3',
                       color: 'white',
@@ -609,6 +620,7 @@ export default function RoomSelect() {
                       marginRight: '10px',
                       boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'}}>@ メンションされました</div>
                   )}
+                  {/* 未読通知：グループチャット */}
                   {room.unread_count != 0 && (
                       <div style={{   
                         backgroundColor: '#d02f2f',

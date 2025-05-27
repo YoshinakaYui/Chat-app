@@ -78,7 +78,7 @@ func MarkMessageAsRead(w http.ResponseWriter, r *http.Request) {
 		UserID      int `json:"user_id" gorm:"column:user_id"`
 		RoomID      int `json:"room_id" gorm:"column:room_id"`
 		UnreadCount int `json:"unread_count" gorm:"column:unread_count"`
-		Mention     int `json:"mention" gorm:"column:mention"`
+		//Mention     int `json:"mention" gorm:"column:mention"`
 	}
 
 	var results []UnreadResult
