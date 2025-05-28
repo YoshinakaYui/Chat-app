@@ -17,6 +17,13 @@ export default function Signup() {
       body: JSON.stringify({ username, password }),
     });
 
+    if (!res.ok) {
+      const data = await res.json();
+      console.log("サーバーからのエラーメッセージ:", data.error);
+      alert(data.error); // "すでにそのユーザー名は使われています。" を表示
+      return;
+    }
+
     if (res.ok) {
       alert("ユーザー登録成功！");
       router.push("/login");

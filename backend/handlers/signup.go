@@ -22,22 +22,34 @@ func AddUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var user models.TsUser
-	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+	var req models.TsUser
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "サインアップ：リクエスト形式が不正", http.StatusBadRequest)
 		return
 	}
 
-	if user.Username == "" || user.Password == "" {
+	if req.Username == "" || req.Password == "" {
 		http.Error(w, "ユーザー名またはパスワードが空です", http.StatusBadRequest)
 		return
 	}
 
-	if err := db.SaveUser(user.Username, user.Password); err != nil {
+	var existingUser db.Users
+	result := db.DB.Where("username = ?", req.Username).First(&existingUser)
+
+	if result.RowsAffected > 0 {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "すでにそのユーザー名は使われています。",
+		})
+		return
+	}
+
+	if err := db.SaveUser(req.Username, req.Password); err != nil {
 		http.Error(w, "データベース保存エラー", http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("保存成功"))
+
 }

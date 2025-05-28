@@ -48,13 +48,16 @@ const ChatRoom = () => {
   const [editText, setEditText] = useState<string>(""); // 編集中の内容
   const [showEmojiPicker, setShowEmojiPicker] = useState(false); // 絵文字
   const [showMentionList, setShowMentionList] = useState(false);
-  
 
-  const [members, setmembers] = useState<User[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isPersonalModalOpen, setIsPersonalModalOpen] = useState(false);
+
+  const [members, setMembers] = useState<User[]>([]);
+  const [notMembers, setNotMembers] = useState<User[]>([]);
 
 
-  // const wsRef = useRef<WebSocket | null>(null);
-  //const socket = useWebSocket();
+
     // 下までスクロール
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -66,23 +69,9 @@ const ChatRoom = () => {
   }, [currentRoomId]);
 
   useEffect(() => {
-    // if (!socket) {
-    //   console.log("!socket")
-    //   return;
-    // }
-
-    //connectWebSocket();
-
-
 
     const setupChat = async () => {
       console.log("setupChat開始")
-      // console.log("現在の wsRef:", wsRef.current) 
-      // if (wsRef.current) {
-      //   console.log("⚠️ WebSocketが既に存在しています");
-      //   return;
-      // }
-
       try {
         // --- ローカルストレージから取得 ---
         const token = localStorage.getItem("token");
@@ -147,7 +136,7 @@ const ChatRoom = () => {
 
         // ✅ 一括既読更新（画面表示された履歴分）
         console.log("FFFFF");
-        const markRes = await fetch(`http://localhost:8080/updataUnReadMessage`, {
+        const markRes = await fetch(`http://localhost:8080/updateUnReadMessage`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -162,148 +151,6 @@ const ChatRoom = () => {
         if (markRes.ok) {
           console.log("✅ 履歴既読化成功:", markResult);
         }
-
-
-        // ✅ WebSocket受信処理
-        //socket.onmessage = async (event) => {
-        // const handleMessage = async (msg: any) => {
-        //   try {
-        //     //const msg = JSON.parse(event.data);
-        //     console.log("📩 ▶︎▶︎▶︎▶︎▶︎▶︎▶︎▶︎▶︎", msg);
-        //     console.log("msg.roomid:", msg.room_id, "currentRoomIdRef.current:",currentRoomIdRef.current )
-
-        //     if (msg.room_id !== currentRoomIdRef.current){
-        //       console.log("msg.room_id：", msg.room_id);
-        //       console.log("currentRoomId：", currentRoomIdRef.current);
-        //       console.log("ルームIDが違います");
-        //       return;
-        //     }
-
-        //     //✅ user_joined メッセージは無視（または通知として別処理）
-        //     if (msg.type === "user_joined") {
-        //       console.log("👥 入室通知イベントを受信:", msg.userId);
-
-        //       // ✅ 自分以外が入室してきたときに true にする
-        //       if (Number(msg.userId) !== Number(userid)) {
-        //         isOtherUserInRoomRef.current = true;
-        //         setIsOtherUserInRoom(true);
-        //         console.log("✅ isOtherUserInRoom = ",isOtherUserInRoom);
-        //       }
-        //       return;
-        //     }
-
-        //     // 新しいメッセージの既読情報の更新
-        //     if (msg.type === "newreadmessage") {
-        //       console.log("既読更新：", msg);
-
-        //       interface SendMessages {
-        //         room_id: number;
-        //         message_id: number;
-        //         readcount: number;
-        //         allread: boolean;
-        //       }
-
-        //       // SendMessagesをMapに変換して高速アクセス
-        //       const sendMap = new Map<number, SendMessages>();
-        //       for (const sm of msg.newReadMessage) {
-        //         sendMap.set(sm.message_id, sm);
-        //       }
-        //       console.log("sendMap：",sendMap);
-
-        //       // messagesを上書きして新しい配列を返す
-        //       setMessages((prevMessages) =>
-        //         prevMessages.map(msglist => {
-        //           //console.log("Messages.mapスタート ");
-        //           const readInfo = sendMap.get(msglist.id);
-        //           if (readInfo) {
-        //             //console.log("readInfo:", msglist.id, " > ", msglist.content, " > ", msglist.readcount);
-        //             return {
-        //               ...msglist,
-        //               allread: readInfo.allread,
-        //               readcount: readInfo.readcount
-        //             };
-        //           }
-        //           return msglist;
-        //         })
-        //       );
-
-        //       return;
-        //     }
-
-        //     if(msg.type === "updataMessage"){
-        //       console.log("編集を共有")
-        //       setMessages((prevMessages) =>
-        //         prevMessages.map(msglist => {
-        //           //console.log("Messages.mapスタート");
-        //           if(msglist.id === msg.messageid){
-        //             return{
-        //               ...msglist,
-        //               content: msg.content
-        //             }
-        //           }
-        //           return msglist;
-        //         })
-        //       );
-        //       return
-        //     }
-            
-        //     // ✅ 通常のチャットメッセージのみ以下を実行
-        //     if (msg.type !== "postmessage"){
-        //       console.log("postmessage以外は無視");
-        //       return;
-        //     }
-        //     if(!msg.postmessage.Content){
-        //       console.log("msg.content：エラー");
-        //       return;
-        //     }
-        //     if(typeof msg.postmessage.Content !== "string"){
-        //       console.log("typeof msg.content：エラー");
-        //       return;
-        //     }
-        //     if (!msg.postmessage.ID || !msg.postmessage.Content || typeof msg.postmessage.Content !== "string") {
-        //       console.warn("⚠️ 無効なチャットメッセージ:", msg);
-        //       return;
-        //     }        
-        //     console.log("👤：",msg.postmessage.SenderID, userid);
-
-
-        //     // ✅ 表示に追加
-        //     const newMessage: Message = {
-        //       id: msg.postmessage.ID,
-        //       sender: msg.postmessage.SenderID,
-        //       sendername: msg.postmessage.sendername,
-        //       type: msg.postmessage.Content.includes("/uploads/") ? "image" : "text", // ✅ 自動判別でもOK
-        //       content: msg.postmessage.Content,
-        //       allread: false,
-        //       readcount: 1,
-        //     };
-        //     setMessages((prev) => [...prev, newMessage]);
-
-
-        //     //console.log("🟣🟣🟣",userid,msg.postmessage.ID,roomId)
-        //     // ✅ 既読リクエスト（自分のメッセージは除外
-        //     const res = await fetch(`http://localhost:8080/read`, {
-        //       method: "POST",
-        //       headers: {
-        //         "Content-Type": "application/json",
-        //         "Authorization": `Bearer ${token}`,
-        //       },
-        //       body: JSON.stringify({ login_id: userid, msg_id: msg.postmessage.ID, room_id: roomId}),
-        //     });
-        //     if (!res.ok) {
-        //       throw new Error("未読一覧取得失敗");
-        //     }
-
-        //     const data = await res.json();
-        //     console.log("PP：",data.data.MessageID);  // エラー、undefind
-
-
-        //   } catch (err) {
-        //     console.error("❌ WebSocket受信処理エラー:", err);
-        //   };
-        // };
-        // addMessageListener(handleMessage);
-        // return() => removeMessageListener(handleMessage);
 
       } catch (err) {
         console.error("❌ チャット初期化エラー:", err);
@@ -324,12 +171,11 @@ const ChatRoom = () => {
     };
   }, [roomId]);
 
+  // メッセージ受け取り
   useEffect(() => {
     connectWebSocket();
     const token = localStorage.getItem("token");
-    //const username = localStorage.getItem("loggedInUser");
     const useridStr = localStorage.getItem("loggedInUserID");
-    //const roomName = localStorage.getItem("roomName");
     const i_roomId = parseInt(roomId as string);
     console.log("i_roomId：",i_roomId);
     const userid = parseInt(useridStr ?? "",10);
@@ -337,12 +183,20 @@ const ChatRoom = () => {
     const handleMessage = async (msg: any) => {
       try {
         //const msg = JSON.parse(event.data);
+        const roomId = Number(msg.room_id);
+        const currentRoomId = Number(currentRoomIdRef.current);
+        console.log("room_id value:", msg.room_id, "type:", typeof msg.room_id);
+        console.log("currentRoomIdRef.current value:", currentRoomIdRef.current, "type:", typeof currentRoomIdRef.current);
+        console.log("等しい？", msg.room_id === currentRoomIdRef.current);
+        
+
         console.log("📩 ▶︎▶︎▶︎▶︎▶︎▶︎▶︎▶︎▶︎", msg);
-        console.log("msg.roomid:", msg.room_id, "currentRoomIdRef.current:",currentRoomIdRef.current )
+        console.log("msg.room_id:", roomId, "currentRoomIdRef.current:",currentRoomId )
+
 
         if (msg.room_id !== currentRoomIdRef.current){
-          console.log("msg.room_id：", msg.room_id);
-          console.log("currentRoomId：", currentRoomIdRef.current);
+          console.log("msg.room_id：", roomId);
+          console.log("currentRoomId：", currentRoomId);
           console.log("ルームIDが違います");
           return;
         }
@@ -381,10 +235,8 @@ const ChatRoom = () => {
           // messagesを上書きして新しい配列を返す
           setMessages((prevMessages) =>
             prevMessages.map(msglist => {
-              //console.log("Messages.mapスタート ");
               const readInfo = sendMap.get(msglist.id);
               if (readInfo) {
-                //console.log("readInfo:", msglist.id, " > ", msglist.content, " > ", msglist.readcount);
                 return {
                   ...msglist,
                   allread: readInfo.allread,
@@ -398,11 +250,16 @@ const ChatRoom = () => {
           return;
         }
 
-        if(msg.type === "updataMessage"){
-          console.log("編集を共有")
+        if(msg.type === "updateMessage"){
+          if (String(loggedInUserid) === String(msg.messageid)){
+            console.log("AAAAAAAAALLLLLLL");
+          }
+          console.log("受信したmsg:", msg);
+
+          console.log("編集、削除を共有")
           setMessages((prevMessages) =>
             prevMessages.map(msglist => {
-              //console.log("Messages.mapスタート");
+              console.log("Messages.mapスタート");
               if(msglist.id === msg.messageid){
                 return{
                   ...msglist,
@@ -413,6 +270,25 @@ const ChatRoom = () => {
             })
           );
           return
+        }
+
+        // リアクション
+
+        if (msg.type === "reaction") {
+          console.log("リアクション受信:", msg);
+        
+          setMessages((prevMessages) =>
+            prevMessages.map(msglist => {
+              if (msglist.id === msg.messageid) {
+                return {
+                  ...msglist,
+                  reaction: msg.reaction // 👍や❤️などを反映
+                };
+              }
+              return msglist;
+            })
+          );
+          return;
         }
         
         // ✅ 通常のチャットメッセージのみ以下を実行
@@ -443,11 +319,13 @@ const ChatRoom = () => {
           type: msg.postmessage.Content.includes("/uploads/") ? "image" : "text", // ✅ 自動判別でもOK
           content: msg.postmessage.Content,
           allread: false,
-          readcount: 1,
+          readcount: 0,
         };
         setMessages((prev) => [...prev, newMessage]);
 
-        // ✅ 既読リクエスト（自分のメッセージは除外
+        // ✅ 既読リクエスト（自分のメッセージは除外）
+        if (msg.SenderID !== userid) {
+          
         const res = await fetch(`http://localhost:8080/read`, {
           method: "POST",
           headers: {
@@ -463,7 +341,7 @@ const ChatRoom = () => {
         const data = await res.json();
         console.log("PP：",data.data.MessageID);  // エラー、undefind
 
-
+      }
       } catch (err) {
         console.error("❌ WebSocket受信処理エラー:", err);
       };
@@ -477,6 +355,8 @@ const ChatRoom = () => {
   // onClickから呼ばれる
   // テキスト送信
   const handleSendMessage = async () => {
+    const token = localStorage.getItem("token");
+
     console.log("xxxxxxxxxxxxxxxx:", messages);
     console.log("currentRoomID", currentRoomIdRef.current)
     if (!message.trim()) {
@@ -495,6 +375,7 @@ const ChatRoom = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
         },
         body: JSON.stringify(newMessage),
       });
@@ -517,6 +398,7 @@ const ChatRoom = () => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
           },
           body: JSON.stringify({
             message_id: parseInt(response.data.ID as string),
@@ -594,7 +476,9 @@ const ChatRoom = () => {
   
   // 編集
   const handleEdit = async (id: number) => {
-    const hoveredMessage = messages.find(msg => msg.id === hoveredMessageId);
+    //const hoveredMessage = messages.find(msg => msg.id === hoveredMessageId);
+    const token = localStorage.getItem("token");
+
     console.log("編集：", id);
 
     if (editText.trim() === "") {
@@ -607,6 +491,7 @@ const ChatRoom = () => {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
         },
         body: JSON.stringify({content: editText, room_id: roomId}),
       });
@@ -614,7 +499,6 @@ const ChatRoom = () => {
       if(!res.ok) throw new Error("編集失敗");
 
       const response = await res.json();
-      console.log("-----3：", response);
 
       setMessages((prev) =>
         prev.map((msg) => (msg.id === id ? { ...msg, content: editText } : msg))
@@ -628,6 +512,8 @@ const ChatRoom = () => {
 
   // 自分のメッセージを削除
   const handleMyDelete = async (id: number) => {
+    const token = localStorage.getItem("token");
+
     console.log("メッセージ削除📝：", id);
     const confirmed = window.confirm("このメッセージを削除しますか？");
     if (!confirmed) return;
@@ -641,6 +527,7 @@ const ChatRoom = () => {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
         },
         body: JSON.stringify({ login_id: loggedInUserid,room_id: roomId}),
       });
@@ -673,6 +560,8 @@ const ChatRoom = () => {
 
   // 送信取消
   const handleDelete = async (id: number) => {
+    const token = localStorage.getItem("token");
+
     const hoveredMessage = messages.find(msg => msg.id === hoveredMessageId);
     console.log("メッセージ送信取消📝：", hoveredMessage);
   
@@ -686,6 +575,7 @@ const ChatRoom = () => {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
         },
         body: JSON.stringify({room_id: roomId}),
       });
@@ -746,14 +636,25 @@ const ChatRoom = () => {
 
       const data = await res.json();
       console.log("メンションデータ：",data.members);
-      setmembers(data.members);
+      setMembers(data.members);
     };
     fetchMembers();
   }, [roomId,loggedInUserid]);
 
+  // メンション相手の表示
   const handleSelectMention = (member: { username: string }) => {
     setMessage((prev) => prev + member.username + " ");
     setShowMentionList(false);
+  };
+
+  // トグル
+  const toggleUserSelection = (userId: number | undefined) => {
+    if (userId === undefined) return;  // safety guard
+    setSelectedUsers((prevSelected) =>
+      prevSelected.includes(userId)
+        ? prevSelected.filter((id) => id !== userId)  // すでに選択されている場合は削除
+        : [...prevSelected, userId]  // 選択されていない場合は追加
+    );
   };
 
   //リアクション（message_readsのreactionに追加）
@@ -771,6 +672,7 @@ const ChatRoom = () => {
       body: JSON.stringify({
         message_id: id,
         user_id: Number(userId),
+        room_id: parseInt(roomId as string),
         reaction: reaction,
       }),
     });  
@@ -787,6 +689,7 @@ const ChatRoom = () => {
 
   // ルーム退出
   const handleLeaveRoom = async () => {
+    const token = localStorage.getItem("token");
     const userId = localStorage.getItem("loggedInUserID");
     if (!userId || !roomId) return;
   
@@ -797,6 +700,7 @@ const ChatRoom = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
         },
         body: JSON.stringify({
           room_id: parseInt(roomId as string),
@@ -814,36 +718,86 @@ const ChatRoom = () => {
     }
   };
 
+  // メンバー追加のためのユーザー一覧取得
+  useEffect(() => {
+    const fetchNotMembers = async () => {
+      const token = localStorage.getItem("token");
+      const userId = localStorage.getItem("loggedInUserID");
+      const i_userId = userId !== null ? parseInt(userId, 10) : null;
+      const membersArray = Array.isArray(members) ? members : Object.values(members);
+
+      console.log("ユーザーIDAAAAAAA：",userId, roomId, members);
+      console.log("送るmembers：", members, Array.isArray(members)); 
+
+      if (!roomId) return;
+        const res = await fetch(`http://localhost:8080/usersNotInRoom?room_id=${roomId}`,{
+          method: "POST",
+          headers:{
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
+          body: JSON.stringify({login_id: i_userId, members: membersArray}),
+        });
+
+        if(!res.ok){
+          console.log("他のユーザーを取得できません");
+        }
+
+        const data = await res.json();
+        console.log("メンバー以外のユーザー：", data.members)
+        setNotMembers(data.members);
+  }
+  fetchNotMembers();
+// }, [roomId, members]);
+}, [roomId]);
+
   // メンバー追加
   const handleAddMember = async () => {
+    const token = localStorage.getItem("token");
+
     const userId = localStorage.getItem("loggedInUserID");
+    //const i_userId = userId !== null ? parseInt(userId, 10) : null;
+
     if (!userId || !roomId) return;
-  
-    //if (!confirm("本当にルームを退出しますか？")) return;
-  
+  console.log("QQQQPPPQQPQP:",selectedUsers);
     try {
       const res = await fetch("http://localhost:8080/addMember", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
         },
-        body: JSON.stringify({
+        body: JSON.stringify({ 
           room_id: parseInt(roomId as string),
-          // user_ids: selectedUsers, // TODO
+          user_ids: selectedUsers,
         }),
       });
   
       if (!res.ok) throw new Error("退出失敗");
-  
-      alert("ルームから退出しました");
-      router.push("/roomSelect"); // 戻るなどのリダイレクト
+      closePersonalModal();
+      alert("メンバーを追加しました");
+      window.location.href = location.pathname;
     } catch (err) {
       console.error("退出エラー:", err);
-      alert("退出に失敗しました");
+      alert("メンバー追加に失敗しました");
     }
 
     // router.push(`/addMember?room_id=${roomId}`);
   };
+
+  // ルーム作成モーダル
+  const openModal = () => {
+    setSelectedUsers([]);
+    setIsModalOpen(true);
+  }
+  const closeModal = () => setIsModalOpen(false);
+
+  const openPersonalModal = () => {
+    setSelectedUsers([]);
+    setIsPersonalModalOpen(true);
+  }
+  const closePersonalModal = () => setIsPersonalModalOpen(false);
+  
   
 
 
@@ -885,36 +839,64 @@ const ChatRoom = () => {
         🔔 新着メッセージが届いています
       </div>
     )} */}
-        <h2 style={{ color: "#388e3c", marginBottom: "15px" }}>ルーム：{groupName ? groupName : "ルーム名がありません"}</h2>
-        <button
-          onClick={handleLeaveRoom}
-          style={{
-            backgroundColor: "#f44336",
-            color: "white",
-            border: "none",
-            borderRadius: "20px",
-            padding: "10px 20px",
-            cursor: "pointer",
-            fontWeight: "bold",
-          }}
-        >
-          退出する
-        </button>
+        {/* ルーム名 */}
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "20px"
+        }}>
+        <h2 style={{ color: "#388e3c", margin: 0 }}>
+          ルーム：{groupName ? groupName : "ルーム名がありません"}
+        </h2>
 
-        <button
-          onClick={handleAddMember}
-          style={{
-            backgroundColor: "#1976d2",
-            color: "white",
-            border: "none",
-            borderRadius: "20px",
-            padding: "10px 20px",
-            cursor: "pointer",
-            fontWeight: "bold",
-          }}
-        >
-          メンバー追加
-        </button>
+        {/* ボタン群（右寄せ） */}
+        <div style={{ display: "flex", gap: "10px" }}>
+          <button
+            onClick={handleLeaveRoom}
+            style={{
+              backgroundColor: "#e8f5e9",
+              color: "#333",
+              border: "1px solid #ccc",
+              borderRadius: "12px",
+              padding: "6px 12px",
+              fontSize: "12px",
+              fontWeight: "bold",
+              cursor: "pointer"
+            }}
+          >
+            退出する
+          </button>
+          <button
+            onClick={openModal}
+            style={{
+              backgroundColor: "#e8f5e9",
+              color: "#333",
+              border: "1px solid #ccc",
+              borderRadius: "12px",
+              padding: "6px 12px",
+              fontSize: "12px",
+              fontWeight: "bold",
+              cursor: "pointer"
+            }}
+          >+ メンバー追加</button>
+            {isModalOpen && (
+              <div style={{ fontSize: "18px",position: "fixed", top: "20%", left: "50%", transform: "translate(-50%, -20%)", backgroundColor: "#fff", padding: "20px", borderRadius: "10px", boxShadow: "0 4px 8px rgba(0,0,0,0.2)", width: "40%",
+                maxWidth: "400px", zIndex: 1000, }}>
+                <h3>グループ作成</h3>
+                {notMembers.map((notmembers) => (
+                  <div key={notmembers.id } style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", marginBottom: "8px" }}>
+                    <input type="checkbox" style={{ marginRight: "20px", marginLeft:"50px" }} checked={selectedUsers.includes(notmembers.id)} onChange={() => toggleUserSelection(notmembers.id)} />
+                    {notmembers.username}
+                  </div>
+                ))}
+                  <button onClick={handleAddMember} style={{ padding: "8px 16px", margin: "10px", backgroundColor: "#388e3c", color: "#fff", borderRadius: "20px" }}>追加</button>
+                  <button onClick={closeModal} style={{ padding: "8px 16px", margin: "10px", backgroundColor: "#388e3c", color: "#fff", borderRadius: "20px" }}>キャンセル</button>
+                </div>
+                    )}
+                    </div>  
+                </div>
+        
         <div style={{ maxHeight: "500px", overflowY: "scroll", marginBottom: "15px" }}>
           {messages.length >= 0 ? (
             messages.map((msg, index) => {
@@ -1006,7 +988,7 @@ const ChatRoom = () => {
                         <>
                       
                     {/* 本文 or 画像 */}
-                    {msg.content.startsWith("http") &&
+                    {(msg.content).startsWith("http") &&
                       msg.content.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) ? (
                       <img
                         src={msg.content}

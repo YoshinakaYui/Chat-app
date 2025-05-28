@@ -278,8 +278,8 @@ func GetRoomMembersByUsers(user1ID int, user2ID int) *db.ChatRoom {
 }
 
 // 未読処理
-func UpdataMessageHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("🟠UpdataMessageHandler：スタート")
+func UpdateMessageHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("🟠UpdateMessageHandler：スタート")
 	utils.EnableCORS(w)
 
 	// メソッド確認

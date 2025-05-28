@@ -7,14 +7,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strconv"
 	"time"
 )
 
 type ReadRequest struct {
-	UserID    int    `json:"login_id"`
-	MessageID int    `json:"msg_id"`
-	RoomID    string `json:"room_id"`
+	UserID    int `json:"login_id"`
+	MessageID int `json:"msg_id"`
+	RoomID    int `json:"room_id"`
 }
 
 type MessageRead struct {
@@ -37,7 +36,6 @@ func MarkMessageAsRead(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "ログイン：許可されていないメソッド", http.StatusMethodNotAllowed)
 		return
 	}
-	log.Println("🟩-1")
 
 	//utils.JsonRawDataDisplay(w, r)
 	var req ReadRequest
@@ -48,37 +46,30 @@ func MarkMessageAsRead(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Println("🔺🔺🔺req：", req)
 
-	log.Println("🟩-2")
-
 	read := MessageRead{
 		MessageID: req.MessageID,
 		UserID:    req.UserID,
 		ReadAt:    time.Now(),
 	}
-	//log.Println("🟩", read)
 
 	if err := db.DB.Table("message_reads").Create(&read).Error; err != nil {
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
-	//log.Println("🟩2：", read)
 
 	var messageid = []int{req.MessageID}
-	i_roomid, err := strconv.Atoi(req.RoomID)
-	if err != nil {
-		http.Error(w, "strconv.Atoi error", http.StatusInternalServerError)
-		return
-	}
-	BroadcastReadCountsToRoom(i_roomid, messageid)
-
-	log.Println("🔺🔺🔺未読数取得-AA")
+	//i_roomid, err := strconv.Atoi(req.RoomID)
+	// if err != nil {
+	// 	http.Error(w, "strconv.Atoi error", http.StatusInternalServerError)
+	// 	return
+	// }
+	BroadcastReadCountsToRoom(req.RoomID, messageid)
 
 	// 未読のリアルタイム通知（roomSelect宛）
 	type UnreadResult struct {
 		UserID      int `json:"user_id" gorm:"column:user_id"`
 		RoomID      int `json:"room_id" gorm:"column:room_id"`
 		UnreadCount int `json:"unread_count" gorm:"column:unread_count"`
-		//Mention     int `json:"mention" gorm:"column:mention"`
 	}
 
 	var results []UnreadResult
@@ -100,10 +91,8 @@ func MarkMessageAsRead(w http.ResponseWriter, r *http.Request) {
 		      AND mr.user_id = rm.user_id
 		  )
 		GROUP BY rm.user_id, m.room_id
-	`, i_roomid, req.UserID).
+	`, req.RoomID, req.UserID).
 		Scan(&results).Error
-
-	log.Println("----", i_roomid, req.UserID)
 
 	if err1 != nil {
 		log.Println("未読数の取得エラー:", err1)
@@ -119,17 +108,17 @@ func MarkMessageAsRead(w http.ResponseWriter, r *http.Request) {
 		joinBroadcast := map[string]interface{}{
 			"type":          "unreadmessage",
 			"unReadMessage": results,
-			"room_id":       i_roomid,
+			"room_id":       req.RoomID,
 		}
 		joinJSON, _ := json.Marshal(joinBroadcast)
 		log.Println("未読ブロードキャスト：", joinJSON)
 
-		var decoded map[string]interface{}
-		err2 := json.Unmarshal(joinJSON, &decoded)
-		if err2 != nil {
-			log.Println("JSONデコード失敗:", err2)
-		}
-		log.Println("未読ブロードキャストPPP：", decoded)
+		// var decoded map[string]interface{}
+		// err2 := json.Unmarshal(joinJSON, &decoded)
+		// if err2 != nil {
+		// 	log.Println("JSONデコード失敗:", err2)
+		// }
+		// log.Println("未読ブロードキャストPPP：", decoded)
 
 		broadcast <- joinJSON
 	}

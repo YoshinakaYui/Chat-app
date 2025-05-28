@@ -31,17 +31,18 @@ func main() {
 	http.HandleFunc("/PersonalRoomSelect", handlers.GetPersonalRoomsHandlers)
 	http.HandleFunc("/groupRoomSelect", handlers.GetGroupRoomsHandlers)
 
-	http.HandleFunc("/createRooms", handlers.CreateGroupRoom)
-	http.HandleFunc("/createGroup", handlers.CreateGroupRoom)
-	http.HandleFunc("/getRooms", handlers.CreateGroupRoom)
+	http.HandleFunc("/createRooms", handlers.CreateChatRoom)
+	http.HandleFunc("/createGroup", handlers.CreateChatRoom)
+	http.HandleFunc("/getRooms", handlers.CreateChatRoom)
 
 	http.HandleFunc("/getRoomMessages", handlers.GetMessagesHandler)
 	http.HandleFunc("/message", handlers.SendMessageHandler)
 	http.HandleFunc("/sendFile", handlers.UploadHandler)
-	http.HandleFunc("/updataUnReadMessage", handlers.UpdataMessageHandler)
+	http.HandleFunc("/updateUnReadMessage", handlers.UpdateMessageHandler)
 
 	http.HandleFunc("/leaveRoom", handlers.LeaveRoomHandler)
 	http.HandleFunc("/addMember", handlers.AddMemberHandler)
+	http.HandleFunc(("/usersNotInRoom"), handlers.UsersNotInRoomHandler)
 
 	http.HandleFunc("/read", handlers.MarkMessageAsRead)
 

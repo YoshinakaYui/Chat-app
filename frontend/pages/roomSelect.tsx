@@ -1,8 +1,6 @@
 import Head from "next/head";
 import { useRouter } from "next/navigation";
-import { Geist, Geist_Mono } from "next/font/google";
 import { useState, useEffect } from "react";
-//import { useWebSocket } from "@/pages/WebSocketContext";
 import { connectWebSocket, addMessageListener, removeMessageListener } from "../utils/websocket";
 
 
@@ -38,10 +36,6 @@ export default function RoomSelect() {
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
   const router = useRouter();
-  //const socket = useWebSocket();
-
-
-  
 
 
   // ルーム作成モーダル
@@ -63,12 +57,16 @@ export default function RoomSelect() {
       alert("グループ名とメンバーを選択してください");
       return;
     }
+    const token = localStorage.getItem("token");
 
     console.log("🟢",selectedUsers,loggedInUserID);
     try {
       const res = await fetch("http://localhost:8080/createGroup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({ room_name: groupName, user_ids: selectedUsers, login_id: loggedInUserID})
       });
       if (!res.ok) {
@@ -92,6 +90,8 @@ export default function RoomSelect() {
   //個別ルーム
   const handleCreatePersonal = async () => {
     console.log("🟢",selectedUsers,loggedInUserID);
+    const token = localStorage.getItem("token");
+
     if (selectedUsers.length != 1) {
       alert("メンバーを選択してください");
       return;
@@ -99,8 +99,11 @@ export default function RoomSelect() {
     try {
       const res = await fetch("http://localhost:8080/createRooms", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ room_name: groupName, user_ids: selectedUsers, login_id: loggedInUserID})
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+          body: JSON.stringify({ room_name: groupName, user_ids: selectedUsers, login_id: loggedInUserID})
       });
       if (!res.ok) {
         const errorMessage = await res.text();  // エラーメッセージを取得
@@ -154,7 +157,6 @@ export default function RoomSelect() {
       const i_loginUserID = loginUserID ? parseInt(loginUserID, 10) : null;
 
       console.log("▶︎▶︎▶︎▶︎▶︎▶︎▶︎",msg); // ロジックを書く
-      console.log("ルーム選択▶︎▶︎▶︎▶︎▶︎▶︎▶︎"); // ロジックを書く
 
       if (msg.type === "unreadmessage") {
         console.log("👥 未読通知を受信:", msg.userId);
@@ -216,8 +218,6 @@ export default function RoomSelect() {
           unread_mention_count: number;
         }
 
-        // const loginUserID = localStorage.getItem("loggedInUserID");
-        // const userID = loginUserID ? parseInt(loginUserID, 10) : null;
         const mentionMap = new Map<number, SendMessages>();
         for (const sm of msg.Mention) {
 
@@ -289,11 +289,28 @@ export default function RoomSelect() {
           console.log("退出するルームがありません");
           return
         }
+        // TODO: ルームを追加
         setPersonals((prevPersonals) =>
           prevPersonals.filter((personal) => personal.id !== msg.room_id)
         );
         
       }
+
+      if (msg.type === "addmembers"){
+        console.log("🔔 メンバー追加通知受信:", msg);
+        alert("グループに招待されました");
+
+        console.log("room_id:", msg.room_id, "msg.userids",msg.userids);
+        if (!(msg.userids.includes(i_loginUserID))){
+          console.log("退出するルームがありません");
+          return
+        }
+        // setPersonals((prevPersonals) =>
+        //   prevPersonals.filter((personal) => personal.id !== msg.room_id)
+        // );
+        
+      }
+
 
 
     };
@@ -461,6 +478,7 @@ export default function RoomSelect() {
     }
   };
 
+  //ログアウト
   const handleLogout = () => {
     //socket?.close();
     localStorage.removeItem("loggedInUser");

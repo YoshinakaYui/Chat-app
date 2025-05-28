@@ -13,7 +13,6 @@ import (
 
 // メッセージ編集
 func EditMessageHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("🟡EditMessageHandler：スタート")
 	utils.EnableCORS(w)
 
 	// メソッド確認
@@ -25,7 +24,6 @@ func EditMessageHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "メソッドが許可されていません", http.StatusMethodNotAllowed)
 		return
 	}
-	log.Println("🟡メソッド：", r.Method)
 
 	idStr := r.URL.Query().Get("id")
 	if idStr == "" {
@@ -34,7 +32,6 @@ func EditMessageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id, err := strconv.Atoi(idStr)
-	log.Println("🟡id：", id)
 	if err != nil {
 		http.Error(w, "無効なID形式です", http.StatusBadRequest)
 		return
@@ -66,15 +63,14 @@ func EditMessageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 既読を他のクライアントへブロードキャスト
+	// 編集を他のクライアントへブロードキャスト
 	messageBroadcast := map[string]interface{}{
-		"type":      "updataMessage",
+		"type":      "updateMessage",
 		"messageid": id,
 		"room_id":   reqBody.RoomID,
 		"content":   reqBody.Content,
 	}
 	messageJSON, _ := json.Marshal(messageBroadcast)
-	//log.Println("NNN：", joinJSON)
 
 	broadcast <- messageJSON
 
@@ -94,7 +90,6 @@ func DeleteMyMessageHandler(w http.ResponseWriter, r *http.Request) {
 	// メソッド確認
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)
-		log.Println("🟢-000メソッド")
 		return
 	}
 	if r.Method != http.MethodPut {
@@ -102,7 +97,6 @@ func DeleteMyMessageHandler(w http.ResponseWriter, r *http.Request) {
 		log.Println("🟢メソッド：", r.Method)
 		return
 	}
-	log.Println("🟢メソッド2：", r.Method)
 
 	idStr := r.URL.Query().Get("id")
 	if idStr == "" {
@@ -122,45 +116,18 @@ func DeleteMyMessageHandler(w http.ResponseWriter, r *http.Request) {
 		RoomID string `json:"room_id"`
 	}
 
-	//utils.JsonRawDataDisplay(w, r)
 	// リクエストボディのデコード
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 		log.Println("🟢デコード：", err)
 		http.Error(w, "リクエスト形式が不正", http.StatusBadRequest)
 		return
 	}
-	log.Println("🟢-111：")
 
 	// 必須フィールドチェック
 	if reqBody.RoomID == "" || reqBody.UserID == 0 || idStr == "" {
 		http.Error(w, "必須フィールドが不足しています", http.StatusBadRequest)
 		return
 	}
-	log.Println("🟢-222：")
-
-	//roomid, err := strconv.Atoi(reqBody.RoomID)
-	// if err != nil {
-	// 	http.Error(w, "ルームIDが不正です", http.StatusBadRequest)
-	// 	return
-	// }
-
-	log.Println("🟢-333：")
-
-	// // メッセージの保存 // message_id, user_id, atでテーブル作る
-	// message := db.Message{
-	// 	RoomID:    roomid,
-	// 	SenderID:  reqBody.UserID,
-	// 	Content:   "DeleteOnlyMessage:" + idStr,
-	// 	CreatedAt: time.Now(),
-	// 	UpdatedAt: time.Now(),
-	// }
-
-	// // データベースに保存
-	// if err := db.DB.Create(&message).Error; err != nil {
-	// 	log.Println("メッセージ保存エラー:", err)
-	// 	http.Error(w, "メッセージ保存失敗", http.StatusInternalServerError)
-	// 	return
-	// }
 
 	delete := db.DeletedMessage{
 		MessageID: id,
@@ -281,7 +248,7 @@ func DeleteMessageHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 送信取消を他のクライアントへブロードキャスト
 	joinBroadcast := map[string]interface{}{
-		"type":      "updataMessage",
+		"type":      "updateMessage",
 		"messageid": id,
 		"room_id":   reqBody.RoomID,
 		"content":   "（このメッセージは削除されました）",
@@ -311,22 +278,18 @@ func ReactionHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "メソッドが許可されていません", http.StatusMethodNotAllowed)
 		return
 	}
-	log.Println("🔵メソッド：", r.Method)
 
 	var req struct {
 		MessageID int    `json:"message_id"`
 		UserID    int    `json:"user_id"`
+		RoomID    int    `json:"room_id"`
 		Reaction  string `json:"reaction"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Println("🔵デコード：", err)
 		http.Error(w, "リクエスト形式が不正", http.StatusBadRequest)
 		return
 	}
-	log.Println("🔵-111：")
-
-	//var read db.MessageReads
 
 	err := db.DB.Model(&db.MessageReads{}).
 		Where("message_id = ? AND user_id = ?", req.MessageID, req.UserID).
@@ -341,10 +304,20 @@ func ReactionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	messageBroadcast := map[string]interface{}{
+		"type":      "reaction",
+		"messageid": req.MessageID,
+		"room_id":   req.RoomID,
+		"user_id":   req.UserID,
+		"reaction":  req.Reaction,
+	}
+	messageJSON, _ := json.Marshal(messageBroadcast)
+
+	broadcast <- messageJSON
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 	w.Write([]byte("リアクション成功"))
-	log.Println("🔵リアクション成功")
 }
 
 // メンションのためのルームメンバー一覧取得
