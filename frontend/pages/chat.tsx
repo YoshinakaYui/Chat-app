@@ -104,7 +104,7 @@ export default function ChatApp() {
   const handleLogout = () => {
     localStorage.removeItem("loggedInUser");
     localStorage.removeItem("token");
-    const token = localStorage.getItem("token");
+    const token = sessionStorage.getItem("token");
     if (!token) {
       console.log("トークンが正常に削除されました");
     } else {
