@@ -418,12 +418,8 @@ export default function RoomSelect() {
         if (!(msg.userids.includes(i_loginUserID))){
           console.log("退出するルームがありません");
           return
-        }
-        
+        } 
       }
-
-
-
     };
 
     addMessageListener(handleMessage);
@@ -443,8 +439,6 @@ export default function RoomSelect() {
         : [...prevSelected, userId]  // 選択されていない場合は追加
     );
   };
-
-
 
   // ルーム作成モーダル
   const openModal = () => {

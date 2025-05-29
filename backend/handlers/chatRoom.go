@@ -362,7 +362,7 @@ func AddMemberHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("メンバーを追加しました", AddMembers)
 
-	// message_readsに記録
+	// message_readsに記録し、既読状態にする
 	for _, userID := range req.SelectedUsers {
 		err := db.DB.Exec(`
 			INSERT INTO message_reads (message_id, user_id, read_at)
