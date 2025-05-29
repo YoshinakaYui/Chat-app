@@ -11,10 +11,6 @@ import (
 	"time"
 )
 
-//	type CreateChatRoomRequest struct {
-//		User1ID int `json:"login_id"`
-//		User2ID int `json:"user_id"`
-//	}
 type CreateGroupRoomRequest struct {
 	GroupName      string `json:"room_name"`
 	LoggedInUserID int    `json:"login_id"`
@@ -40,7 +36,7 @@ type addMember struct {
 
 // チャットルーム作成（個別ルーム＆グループルーム）
 func CreateChatRoom(w http.ResponseWriter, r *http.Request) {
-	log.Println("🟡CreateGroupRoom：スタート")
+	log.Println("CreateGroupRoom：スタート")
 	utils.EnableCORS(w)
 
 	if r.Method == http.MethodOptions {
@@ -64,8 +60,6 @@ func CreateChatRoom(w http.ResponseWriter, r *http.Request) {
 	var is_group int = 0
 	if reqGroup.GroupName == "" {
 		// 個別チャット
-		//log.Println("🟡CreateGroupRoom：", len(reqGroup.SelectedUsers))
-
 		if len(reqGroup.SelectedUsers) != 1 {
 			http.Error(w, "メンバーを選択してください", http.StatusBadRequest)
 			return
@@ -111,8 +105,7 @@ func CreateChatRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// メンバー登録
-	// 作成したchat_roomsのidとreqGroupのuser_ids(複数ユーザー)をroom_membersに保存
+	// メンバー登録：作成したchat_roomsのidとreqGroupのuser_ids(複数ユーザー)をroom_membersに保存
 	var GruopMembers []db.RoomMember
 
 	// SelectedUsersに自分を追加する
@@ -128,44 +121,34 @@ func CreateChatRoom(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ルーム作成を他のクライアントへブロードキャスト
-	// GroupNameの確定.
+	roomusers := make(map[int]string)
+
 	groupname := reqGroup.GroupName
 	if is_group == 0 {
 		// 個別チャット.
-
-		var username string
-		err := db.DB.
-			Table("users").
-			Select("username").
-			Where("id = ?", reqGroup.SelectedUsers[0]).
-			Scan(&username).Error
-
+		username1, err := db.GetUserName(reqGroup.SelectedUsers[0])
 		if err != nil {
 			log.Println("❌ ユーザー名の取得失敗:", err)
 		}
 
-		groupname = username
+		username2, err1 := db.GetUserName(reqGroup.LoggedInUserID)
+		if err1 != nil {
+			log.Println("❌ ユーザー名の取得失敗:", err1)
+		}
 
-	}
-	reqGroup.SelectedUsers = append(reqGroup.SelectedUsers, reqGroup.LoggedInUserID)
+		roomusers[reqGroup.SelectedUsers[0]] = username2
+		roomusers[reqGroup.LoggedInUserID] = username1
 
-	roomBroadcast := map[string]interface{}{
-		"type":       "createroom",
-		"memberlist": reqGroup.SelectedUsers,
-		"roomname":   groupname,
-		"room_id":    room.ID,
-		"is_group":   is_group,
-	}
-	roomJSON, _ := json.Marshal(roomBroadcast)
-	// log.Println("NNN：", mentionJSON)
-
-	var decoded map[string]interface{}
-	err2 := json.Unmarshal(roomJSON, &decoded)
-	if err2 != nil {
-		log.Println("JSONデコード失敗:", err2)
+	} else {
+		// グループチャット
+		for i := 0; i < len(reqGroup.SelectedUsers); i++ {
+			roomusers[reqGroup.SelectedUsers[i]] = reqGroup.GroupName
+		}
+		roomusers[reqGroup.LoggedInUserID] = reqGroup.GroupName
 	}
 
-	broadcast <- roomJSON
+	//ルーム作成をブロードキャスト
+	BroadcastCreateRomm(room.ID, groupname, roomusers, is_group)
 
 	log.Println("新規グループルーム作成成功:", room.ID)
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -174,6 +157,31 @@ func CreateChatRoom(w http.ResponseWriter, r *http.Request) {
 		"roomId":  room.ID,
 	})
 
+}
+
+// ルームメンバー取得処理（チャットルーム作成で呼び出される）
+func GetRoomMembersByUsers(user1ID int, user2ID int) *db.ChatRoom {
+	var chatroom db.ChatRoom
+
+	result := db.DB.Table("chat_rooms AS cr").
+		Select("cr.*").
+		Joins(`JOIN (
+                SELECT rm1.room_id
+                FROM room_members AS rm1
+                JOIN room_members AS rm2 ON rm1.room_id = rm2.room_id
+                WHERE rm1.user_id = ? 
+                  AND rm2.user_id = ? 
+                  AND rm1.user_id <> rm2.user_id
+            ) AS common_rooms ON cr.id = common_rooms.room_id`, user1ID, user2ID).
+		Where("cr.is_group = ?", 0).
+		First(&chatroom)
+
+	if result.Error != nil {
+		log.Println("チャットルームが見つかりません:", result.Error)
+		return nil
+	}
+
+	return &chatroom
 }
 
 // ルーム退出
@@ -244,21 +252,11 @@ func LeaveRoomHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 既読を他のクライアントへブロードキャスト
-	joinBroadcast := map[string]interface{}{
-		"type":    "leaveroom",
-		"userids": userIDs,
-		"room_id": req.RoomID,
-	}
-	joinJSON, _ := json.Marshal(joinBroadcast)
-
-	log.Println("ルーム退出：")
-
-	broadcast <- joinJSON
-
+	BroadcastLeaveRoom(req.RoomID, userIDs)
 }
 
-// メンバー追加
-func AddMemberHandler(w http.ResponseWriter, r *http.Request) {
+// メンバー追加のためのルームに存在しないをユーザー取得
+func UsersNotInRoomHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("AddMemberHandler：スタート")
 	utils.EnableCORS(w)
 
@@ -266,89 +264,14 @@ func AddMemberHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	if r.Method != http.MethodPost {
-		http.Error(w, "メソッドが許可されていません", http.StatusMethodNotAllowed)
-		return
-	}
-	log.Println("🐣AddMemberHandler：", r.Method)
-
-	// リクエストボディからデータを取得
-	var req addMember
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Println("リクエストボディのデコードエラー:", err)
-		http.Error(w, "リクエスト形式が不正です", http.StatusBadRequest)
-		return
-	}
-	log.Println("🐣AddMemberHandler_req：", req)
-
-	// メンバー登録
-	var AddMembers []db.RoomMember
-
-	for i := 0; i < len(req.SelectedUsers); i++ {
-		AddMembers = append(AddMembers, db.RoomMember{RoomID: req.RoomID, UserID: req.SelectedUsers[i], JoinedAt: time.Now()})
-	}
-
-	log.Println("追加できたと思う", AddMembers)
-
-	if err := db.DB.Create(&AddMembers).Error; err != nil {
-		log.Println("room_members作成エラー：", err)
-		http.Error(w, "メンバー作成失敗", http.StatusInternalServerError)
-		return
-	}
-
-	log.Println("追加しました", AddMembers)
-
-	// message_readsに記録
-	for _, userID := range req.SelectedUsers {
-		err := db.DB.Exec(`
-			INSERT INTO message_reads (message_id, user_id, read_at)
-			SELECT m.id, ?, ?
-			FROM messages m
-			WHERE m.room_id = ?
-			  AND m.id NOT IN (
-				SELECT mr.message_id FROM message_reads mr WHERE mr.user_id = ?
-			  )`,
-			userID, time.Now(), req.RoomID, userID).Error
-
-		if err != nil {
-			log.Println("❌ 既読データの挿入失敗:", err)
-		}
-	}
-
-	log.Println("新メンバー既読")
-
-	// 追加を他のクライアントへブロードキャスト
-	joinBroadcast := map[string]interface{}{
-		"type":    "addmembers",
-		"userids": req.SelectedUsers,
-		"room_id": req.RoomID,
-	}
-	joinJSON, _ := json.Marshal(joinBroadcast)
-
-	log.Println("ルーム退出：")
-
-	broadcast <- joinJSON
-}
-
-// メンバー追加のためのルームに存在しないをユーザー取得
-func UsersNotInRoomHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("🐶AddMemberHandler：スタート")
-	utils.EnableCORS(w)
-
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
 
 	if r.Method != http.MethodPost {
 		http.Error(w, "メソッドが許可されていません", http.StatusMethodNotAllowed)
 		return
 	}
-
-	log.Println("🐶AddMemberHandler：スタート", r.Method)
 
 	idStr := r.URL.Query().Get("room_id")
-	log.Println("🐶AddMemberHandler ルームID：", idStr)
+	log.Println("AddMemberHandler ルームID：", idStr)
 	if idStr == "" {
 		http.Error(w, "IDが指定されていません", http.StatusBadRequest)
 		return
@@ -358,7 +281,6 @@ func UsersNotInRoomHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "ルームIDが不正です", http.StatusBadRequest)
 		return
 	}
-	log.Println("🐶AddMemberHandler", id)
 
 	// リクエストボディのパース
 	var req struct {
@@ -366,7 +288,6 @@ func UsersNotInRoomHandler(w http.ResponseWriter, r *http.Request) {
 		Members     []int `json:"members"`
 	}
 
-	//utils.JsonRawDataDisplay(w, r)
 	// リクエストボディからデータを取得
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Println("リクエストボディのデコードエラー:", err)
@@ -402,4 +323,64 @@ func UsersNotInRoomHandler(w http.ResponseWriter, r *http.Request) {
 		"members": users,
 	})
 
+}
+
+// メンバー追加
+func AddMemberHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("AddMemberHandler：スタート")
+	utils.EnableCORS(w)
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "メソッドが許可されていません", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// リクエストボディからデータを取得
+	var req addMember
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Println("リクエストボディのデコードエラー:", err)
+		http.Error(w, "リクエスト形式が不正です", http.StatusBadRequest)
+		return
+	}
+
+	// メンバー登録
+	var AddMembers []db.RoomMember
+
+	for i := 0; i < len(req.SelectedUsers); i++ {
+		AddMembers = append(AddMembers, db.RoomMember{RoomID: req.RoomID, UserID: req.SelectedUsers[i], JoinedAt: time.Now()})
+	}
+
+	if err := db.DB.Create(&AddMembers).Error; err != nil {
+		log.Println("room_members作成エラー：", err)
+		http.Error(w, "メンバー作成失敗", http.StatusInternalServerError)
+		return
+	}
+
+	log.Println("メンバーを追加しました", AddMembers)
+
+	// message_readsに記録
+	for _, userID := range req.SelectedUsers {
+		err := db.DB.Exec(`
+			INSERT INTO message_reads (message_id, user_id, read_at)
+			SELECT m.id, ?, ?
+			FROM messages m
+			WHERE m.room_id = ?
+			  AND m.id NOT IN (
+				SELECT mr.message_id FROM message_reads mr WHERE mr.user_id = ?
+			  )`,
+			userID, time.Now(), req.RoomID, userID).Error
+
+		if err != nil {
+			log.Println("❌ 既読データの挿入失敗:", err)
+		}
+	}
+
+	log.Println("新メンバー既読")
+
+	// 追加を他のクライアントへブロードキャスト
+	BroadcastAddMember(req.RoomID, req.SelectedUsers)
 }

@@ -13,7 +13,7 @@ export function connectWebSocket() {
   
     socket.onmessage = (event) => {
       const message = JSON.parse(event.data);
-      console.log("listeners：",listeners.length);
+      //console.log("listeners：",listeners.length);
       listeners.forEach((cb) => cb(message)); 
     };
   

@@ -30,8 +30,6 @@ export default function Home() {
         }}>
           <div style={{
             backgroundColor: "#c8e6c9",
-            //width: "40px",
-            //height: "40px",
             borderRadius: "50%",
             margin: "0 auto 20px auto"
           }}></div>

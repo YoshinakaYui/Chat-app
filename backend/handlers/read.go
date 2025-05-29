@@ -22,9 +22,9 @@ type MessageRead struct {
 	ReadAt    time.Time `json:"read_at"`
 }
 
-// 既読
+// 既読フラグをつける
 func MarkMessageAsRead(w http.ResponseWriter, r *http.Request) {
-	log.Println("🟩MarkMessageAsRead")
+	log.Println("MarkMessageAsRead：スタート")
 
 	utils.EnableCORS(w)
 	if r.Method == "OPTIONS" {
@@ -37,14 +37,12 @@ func MarkMessageAsRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//utils.JsonRawDataDisplay(w, r)
 	var req ReadRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		log.Println("read.go エラー：", err)
 		return
 	}
-	log.Println("🔺🔺🔺req：", req)
 
 	read := MessageRead{
 		MessageID: req.MessageID,
@@ -58,21 +56,10 @@ func MarkMessageAsRead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var messageid = []int{req.MessageID}
-	//i_roomid, err := strconv.Atoi(req.RoomID)
-	// if err != nil {
-	// 	http.Error(w, "strconv.Atoi error", http.StatusInternalServerError)
-	// 	return
-	// }
+
 	BroadcastReadCountsToRoom(req.RoomID, messageid)
 
-	// 未読のリアルタイム通知（roomSelect宛）
-	type UnreadResult struct {
-		UserID      int `json:"user_id" gorm:"column:user_id"`
-		RoomID      int `json:"room_id" gorm:"column:room_id"`
-		UnreadCount int `json:"unread_count" gorm:"column:unread_count"`
-	}
-
-	var results []UnreadResult
+	var results []db.UnreadResult
 
 	err1 := db.DB.
 		Raw(`
@@ -101,26 +88,11 @@ func MarkMessageAsRead(w http.ResponseWriter, r *http.Request) {
 			fmt.Printf("room_id: %d, 未読数: %d\n", r.RoomID, r.UnreadCount)
 		}
 	}
-	log.Println("🔺🔺🔺未読数取得-BB:", results)
+	log.Println("未読数取得:", results)
 
+	// 既読を他のクライアントへブロードキャスト
 	if len(results) != 0 {
-		// 既読を他のクライアントへブロードキャスト
-		joinBroadcast := map[string]interface{}{
-			"type":          "unreadmessage",
-			"unReadMessage": results,
-			"room_id":       req.RoomID,
-		}
-		joinJSON, _ := json.Marshal(joinBroadcast)
-		log.Println("未読ブロードキャスト：", joinJSON)
-
-		// var decoded map[string]interface{}
-		// err2 := json.Unmarshal(joinJSON, &decoded)
-		// if err2 != nil {
-		// 	log.Println("JSONデコード失敗:", err2)
-		// }
-		// log.Println("未読ブロードキャストPPP：", decoded)
-
-		broadcast <- joinJSON
+		BroadcastUnreadMessage(req.RoomID, results)
 	}
 
 	w.WriteHeader(http.StatusOK)

@@ -3,7 +3,6 @@ import React from "react";
 import { useState, useEffect, useRef } from "react";
 import EmojiPicker from 'emoji-picker-react';
 import Link from "next/link";
-//import { useWebSocket } from "@/pages/WebSocketContext";
 import { connectWebSocket, addMessageListener, removeMessageListener } from "../utils/websocket";
 
 interface User {
@@ -25,6 +24,7 @@ const ChatRoom = () => {
   const router = useRouter();
   const [loggedInUser, setLoggedInUser] = useState<string | null>(null);
   const [loggedInUserid, setLoggedInUserid] = useState<number | null>(null);
+  const [isGroup, setIsGroup] = useState<number | null>(null);
 
   const { roomId } = router.query;
 
@@ -58,18 +58,19 @@ const ChatRoom = () => {
 
 
 
-    // 下までスクロール
+    // メッセージを下までスクロール
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // currentRoomIdを更新
   useEffect(() => {
     console.log("currentRoomId が変化した：", currentRoomId);
     currentRoomIdRef.current = currentRoomId;
   }, [currentRoomId]);
 
+  // メッセージ履歴取得
   useEffect(() => {
-
     const setupChat = async () => {
       console.log("setupChat開始")
       try {
@@ -77,10 +78,12 @@ const ChatRoom = () => {
         const token = localStorage.getItem("token");
         const username = localStorage.getItem("loggedInUser");
         const useridStr = localStorage.getItem("loggedInUserID");
+        const is_group = localStorage.getItem("is_group");
         const roomName = localStorage.getItem("roomName");
         const i_roomId = parseInt(roomId as string);
         console.log("i_roomId：",i_roomId);
 
+        setIsGroup(parseInt(is_group?? "",10));
         setCurrentRoomId(i_roomId);
         console.log("currentRoomId：", currentRoomId);
 
@@ -105,7 +108,6 @@ const ChatRoom = () => {
             roomId: parseInt(roomId as string),
             userId: userid,
           };
-          //socket.send(JSON.stringify(joinEvent));
           console.log("🟢 入室通知送信:", joinEvent);
           setMessages((prev) => prev.map((msg) => ({ ...msg, isRead: true })));
         }
@@ -123,9 +125,7 @@ const ChatRoom = () => {
         });
 
         const data = await res.json();
-        console.log("😭",data.messages);
         setMessages(data.messages);
-
 
         // ✅ nullチェック追加！
         if (data && Array.isArray(data.messages)) {
@@ -165,7 +165,6 @@ const ChatRoom = () => {
     return () => {
       // 離脱時はnullにする
       console.log("roomid clear.")
-      //socket.onmessage = null;
       setCurrentRoomId(null);
       currentRoomIdRef.current = null;
     };
@@ -182,19 +181,15 @@ const ChatRoom = () => {
 
     const handleMessage = async (msg: any) => {
       try {
-        //const msg = JSON.parse(event.data);
         const roomId = Number(msg.room_id);
         const currentRoomId = Number(currentRoomIdRef.current);
         console.log("room_id value:", msg.room_id, "type:", typeof msg.room_id);
         console.log("currentRoomIdRef.current value:", currentRoomIdRef.current, "type:", typeof currentRoomIdRef.current);
-        console.log("等しい？", msg.room_id === currentRoomIdRef.current);
         
-
-        console.log("📩 ▶︎▶︎▶︎▶︎▶︎▶︎▶︎▶︎▶︎", msg);
         console.log("msg.room_id:", roomId, "currentRoomIdRef.current:",currentRoomId )
 
 
-        if (msg.room_id !== currentRoomIdRef.current){
+        if (parseInt(msg.room_id) !== currentRoomIdRef.current){
           console.log("msg.room_id：", roomId);
           console.log("currentRoomId：", currentRoomId);
           console.log("ルームIDが違います");
@@ -230,7 +225,6 @@ const ChatRoom = () => {
           for (const sm of msg.newReadMessage) {
             sendMap.set(sm.message_id, sm);
           }
-          console.log("sendMap：",sendMap);
 
           // messagesを上書きして新しい配列を返す
           setMessages((prevMessages) =>
@@ -252,7 +246,6 @@ const ChatRoom = () => {
 
         if(msg.type === "updateMessage"){
           if (String(loggedInUserid) === String(msg.messageid)){
-            console.log("AAAAAAAAALLLLLLL");
           }
           console.log("受信したmsg:", msg);
 
@@ -282,7 +275,7 @@ const ChatRoom = () => {
               if (msglist.id === msg.messageid) {
                 return {
                   ...msglist,
-                  reaction: msg.reaction // 👍や❤️などを反映
+                  reaction: msg.reaction // 👍を反映
                 };
               }
               return msglist;
@@ -308,15 +301,15 @@ const ChatRoom = () => {
           console.warn("⚠️ 無効なチャットメッセージ:", msg);
           return;
         }        
-        console.log("👤：",msg.postmessage.SenderID, userid);
+        console.log("👤：",msg.postmessage.SenderID, userid, msg.postmessage.sendername);
 
 
         // ✅ 表示に追加
         const newMessage: Message = {
           id: msg.postmessage.ID,
           sender: msg.postmessage.SenderID,
-          sendername: msg.postmessage.sendername,
-          type: msg.postmessage.Content.includes("/uploads/") ? "image" : "text", // ✅ 自動判別でもOK
+          sendername: msg.postmessage.SenderName,
+          type: msg.postmessage.Content.includes("/uploads/") ? "image" : "text",
           content: msg.postmessage.Content,
           allread: false,
           readcount: 0,
@@ -339,8 +332,6 @@ const ChatRoom = () => {
         }
 
         const data = await res.json();
-        console.log("PP：",data.data.MessageID);  // エラー、undefind
-
       }
       } catch (err) {
         console.error("❌ WebSocket受信処理エラー:", err);
@@ -352,13 +343,11 @@ const ChatRoom = () => {
 
   })
 
-  // onClickから呼ばれる
-  // テキスト送信
+  // メッセージ送信（onClickから呼ばれる）
   const handleSendMessage = async () => {
     const token = localStorage.getItem("token");
 
-    console.log("xxxxxxxxxxxxxxxx:", messages);
-    console.log("currentRoomID", currentRoomIdRef.current)
+    console.log("メッセージ:", messages);
     if (!message.trim()) {
       alert("メッセージを入力してください");
       return;
@@ -386,7 +375,6 @@ const ChatRoom = () => {
 
       const response = await res.json();
       console.log("📨データ：", response);
-      console.log("📨データ ID：", response.data.ID);
 
       // ✅ メンションされたユーザーを抽出（@username を含むかどうか）
       const mentionedUserIds = members
@@ -416,6 +404,28 @@ const ChatRoom = () => {
     }
   };
 
+  // メンションのためのルームメンバー一覧取得
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    console.log("ユーザーID：",loggedInUserid)
+    if (!roomId) return;
+    const fetchMembers = async () => {
+      const res = await fetch(`http://localhost:8080/getRoomMembers?room_id=${roomId}`,{
+        method: "POST",
+        headers:{
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({login_id: loggedInUserid}),
+      });
+
+      const data = await res.json();
+      console.log("メンションデータ：",data.members);
+      setMembers(data.members);
+    };
+    fetchMembers();
+  }, [roomId,loggedInUserid]);
+
 
   // ファイル選択
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -430,8 +440,6 @@ const ChatRoom = () => {
       alert("ファイルを選択してください");
       return;
     }
-
-    console.log(loggedInUserid);
 
     const formData = new FormData();
     formData.append("file",selectedFile);
@@ -452,12 +460,8 @@ const ChatRoom = () => {
         throw new Error("アップロード失敗");
       }
 
-
       const response = await res.json();
-      console.log("アップロード成功: " + response);
-
       console.log("📨ファイルデータ：", response);
-      console.log("📨ファイルデータ ID：", response.data.ID);
 
       setMessage("");
       
@@ -470,13 +474,12 @@ const ChatRoom = () => {
     } catch (error) {
       alert("アップロードエラー：" + error);
     }
-    console.log("🔍 content:", messages); // タイプを変更 chat → image
+    console.log("🔍 content:", messages);
   };
 
   
   // 編集
   const handleEdit = async (id: number) => {
-    //const hoveredMessage = messages.find(msg => msg.id === hoveredMessageId);
     const token = localStorage.getItem("token");
 
     console.log("編集：", id);
@@ -498,7 +501,7 @@ const ChatRoom = () => {
 
       if(!res.ok) throw new Error("編集失敗");
 
-      const response = await res.json();
+      //const response = await res.json();
 
       setMessages((prev) =>
         prev.map((msg) => (msg.id === id ? { ...msg, content: editText } : msg))
@@ -536,14 +539,14 @@ const ChatRoom = () => {
         } else {
           alert("メッセージを削除しました");
         }
-              // ✅ メッセージを「削除済み表示」に差し替える
+          // ✅ メッセージを「削除済み表示」に差し替える
           setMessages((prev) =>
             prev.map((msg) =>
               msg.id === id
                 ? {
                     ...msg,
                     content: "（このメッセージは削除されました）",
-                    type: "text", // 念のため
+                    type: "text",
                   }
                 : msg
             )
@@ -569,7 +572,6 @@ const ChatRoom = () => {
     const confirmed = window.confirm("このメッセージを送信取消しますか？");
     if (!confirmed) return;
     
-    // 送信取消処理の実装へ
     try{
       const res = await fetch(`http://localhost:8080/deleteMessage?id=${id}`, { // id = message.id
         method: "PUT",
@@ -584,14 +586,14 @@ const ChatRoom = () => {
         } else {
           alert("メッセージを送信取消しました");
         }
-              // ✅ メッセージを「削除済み表示」に差し替える
+          // ✅ メッセージを「削除済み表示」に差し替える
           setMessages((prev) =>
             prev.map((msg) =>
               msg.id === id
                 ? {
                     ...msg,
                     content: "（このメッセージは削除されました）",
-                    type: "text", // 念のため
+                    type: "text",
                   }
                 : msg
             )
@@ -619,27 +621,7 @@ const ChatRoom = () => {
     }
   };
 
-  // メンションのためのルームメンバー一覧取得
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    console.log("ユーザーID：",loggedInUserid)
-    if (!roomId) return;
-    const fetchMembers = async () => {
-      const res = await fetch(`http://localhost:8080/getRoomMembers?room_id=${roomId}`,{
-        method: "POST",
-        headers:{
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({login_id: loggedInUserid}),
-      });
 
-      const data = await res.json();
-      console.log("メンションデータ：",data.members);
-      setMembers(data.members);
-    };
-    fetchMembers();
-  }, [roomId,loggedInUserid]);
 
   // メンション相手の表示
   const handleSelectMention = (member: { username: string }) => {
@@ -726,7 +708,6 @@ const ChatRoom = () => {
       const i_userId = userId !== null ? parseInt(userId, 10) : null;
       const membersArray = Array.isArray(members) ? members : Object.values(members);
 
-      console.log("ユーザーIDAAAAAAA：",userId, roomId, members);
       console.log("送るmembers：", members, Array.isArray(members)); 
 
       if (!roomId) return;
@@ -748,18 +729,14 @@ const ChatRoom = () => {
         setNotMembers(data.members);
   }
   fetchNotMembers();
-// }, [roomId, members]);
 }, [roomId]);
 
   // メンバー追加
   const handleAddMember = async () => {
     const token = localStorage.getItem("token");
-
     const userId = localStorage.getItem("loggedInUserID");
-    //const i_userId = userId !== null ? parseInt(userId, 10) : null;
 
     if (!userId || !roomId) return;
-  console.log("QQQQPPPQQPQP:",selectedUsers);
     try {
       const res = await fetch("http://localhost:8080/addMember", {
         method: "POST",
@@ -782,7 +759,6 @@ const ChatRoom = () => {
       alert("メンバー追加に失敗しました");
     }
 
-    // router.push(`/addMember?room_id=${roomId}`);
   };
 
   // ルーム作成モーダル
@@ -792,10 +768,6 @@ const ChatRoom = () => {
   }
   const closeModal = () => setIsModalOpen(false);
 
-  const openPersonalModal = () => {
-    setSelectedUsers([]);
-    setIsPersonalModalOpen(true);
-  }
   const closePersonalModal = () => setIsPersonalModalOpen(false);
   
   
@@ -821,24 +793,6 @@ const ChatRoom = () => {
         maxWidth: "1000px",
         textAlign: "center"
       }}>
-              {/* { (
-      <div style={{
-        position: "fixed",
-        top: "20px",
-        left: "50%",
-        transform: "translateX(-50%)",
-        backgroundColor: "#81c784",
-        color: "white",
-        padding: "12px 24px",
-        borderRadius: "30px",
-        boxShadow: "0 4px 8px rgba(0,0,0,0.2)",
-        zIndex: 9999,
-        fontSize: "16px",
-        fontWeight: "bold"
-      }}>
-        🔔 新着メッセージが届いています
-      </div>
-    )} */}
         {/* ルーム名 */}
         <div style={{
           display: "flex",
@@ -867,6 +821,7 @@ const ChatRoom = () => {
           >
             退出する
           </button>
+          {isGroup == 1 &&(
           <button
             onClick={openModal}
             style={{
@@ -879,7 +834,7 @@ const ChatRoom = () => {
               fontWeight: "bold",
               cursor: "pointer"
             }}
-          >+ メンバー追加</button>
+          >+ メンバー追加</button>)}
             {isModalOpen && (
               <div style={{ fontSize: "18px",position: "fixed", top: "20%", left: "50%", transform: "translate(-50%, -20%)", backgroundColor: "#fff", padding: "20px", borderRadius: "10px", boxShadow: "0 4px 8px rgba(0,0,0,0.2)", width: "40%",
                 maxWidth: "400px", zIndex: 1000, }}>
@@ -914,7 +869,7 @@ const ChatRoom = () => {
                   onMouseEnter={() => {
                     hoverTimeoutRef.current = setTimeout(() => {
                       setHoveredMessageId(msg.id);
-                    }, 700); // 1000ms待って表示
+                    }, 700); // 700ms待って表示
                   }}
                   onMouseLeave={() => {
                     if (hoverTimeoutRef.current) {
@@ -1010,13 +965,12 @@ const ChatRoom = () => {
                           fontStyle: msg.content === "（このメッセージは削除されました）" ? "italic" : "normal",
                         }}
                       >
-                        {msg.id} : {msg.content}
+                        {msg.content}
                       </div>
                     )}
                   </>
                 )}
                     {/* 既読 */}
-                    {/* {msg.allread && isMyMessage && isOtherUserInRoomRef.current && ( */}
                     {isMyMessage && (
                       <div
                         style={{
@@ -1027,7 +981,7 @@ const ChatRoom = () => {
                           right: "10px",
                         }}
                       >
-                        {msg.allread ? "全員既読" : `既読 ${msg.readcount}`}
+                        {msg.allread ? "全員既読" : `既読 ${msg.readcount-1}`}
                       </div>
                     )}
                   </div>

@@ -17,7 +17,7 @@
       "@/*": ["./*"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "pages/WebSocketContext.tsx.backup"],
   "exclude": ["node_modules"]
 }
 

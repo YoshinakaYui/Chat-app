@@ -9,7 +9,6 @@ type TsUser struct {
 	ID       int    `json:"id"`
 	Username string `json:"username" gorm:"unique"`
 	Password string `json:"password"`
-	//PasswordHash string `json:"password_hash"`
 }
 
 type TsMessage struct {
@@ -25,11 +24,6 @@ type TsMessage struct {
 type TsResponse struct {
 	Message string `json:"message"`
 }
-
-// type User struct {
-// 	ID       int    `gorm:"primaryKey" json:"id"`
-// 	Username string `json:"username"`
-// }
 
 // チャットルーム構造体
 type TsChatRoom struct {
