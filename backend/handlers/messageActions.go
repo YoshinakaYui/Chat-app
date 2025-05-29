@@ -13,6 +13,7 @@ import (
 
 // メッセージ編集
 func EditMessageHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("EditMessageHandler：スタート")
 	utils.EnableCORS(w)
 
 	// メソッド確認
@@ -64,17 +65,8 @@ func EditMessageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 編集を他のクライアントへブロードキャスト
-	messageBroadcast := map[string]interface{}{
-		"type":      "updateMessage",
-		"messageid": id,
-		"room_id":   reqBody.RoomID,
-		"content":   reqBody.Content,
-	}
-	messageJSON, _ := json.Marshal(messageBroadcast)
+	BroadcastEditMessage(reqBody.RoomID, id, reqBody.Content)
 
-	broadcast <- messageJSON
-
-	log.Println("🟡 メッセージ更新成功:", id)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "success",
 		"message": "メッセージを更新しました",
@@ -84,7 +76,7 @@ func EditMessageHandler(w http.ResponseWriter, r *http.Request) {
 
 // メッセージ削除
 func DeleteMyMessageHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("DeleteMyMessageHandler")
+	log.Println("DeleteMyMessageHandler：スタート")
 	utils.EnableCORS(w)
 
 	// メソッド確認
@@ -94,7 +86,6 @@ func DeleteMyMessageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method != http.MethodPut {
 		http.Error(w, "メソッドが許可されていません", http.StatusMethodNotAllowed)
-		log.Println("🟢メソッド：", r.Method)
 		return
 	}
 
@@ -108,7 +99,6 @@ func DeleteMyMessageHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "ルームIDが不正です", http.StatusBadRequest)
 		return
 	}
-	log.Println("🟢メッセージID：", idStr)
 
 	// リクエストボディのパース
 	var reqBody struct {
@@ -118,7 +108,6 @@ func DeleteMyMessageHandler(w http.ResponseWriter, r *http.Request) {
 
 	// リクエストボディのデコード
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-		log.Println("🟢デコード：", err)
 		http.Error(w, "リクエスト形式が不正", http.StatusBadRequest)
 		return
 	}
@@ -141,13 +130,11 @@ func DeleteMyMessageHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "メッセージ保存失敗", http.StatusInternalServerError)
 		return
 	}
-	log.Println("🟢deleteデータベースに保存完了")
-
 }
 
 // メッセージ送信取消
 func DeleteMessageHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("🟢DeleteMessageHandler：スタート")
+	log.Println("DeleteMessageHandler：スタート")
 	utils.EnableCORS(w)
 
 	type Message struct {
@@ -179,7 +166,6 @@ func DeleteMessageHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "メソッドが許可されていません", http.StatusMethodNotAllowed)
 		return
 	}
-	log.Println("🟢メソッド：", r.Method)
 
 	idStr := r.URL.Query().Get("id")
 	if idStr == "" {
@@ -188,7 +174,6 @@ func DeleteMessageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id, err := strconv.Atoi(idStr)
-	log.Println("🟢id：", id)
 	if err != nil {
 		http.Error(w, "無効なID形式です", http.StatusBadRequest)
 		return
@@ -201,7 +186,6 @@ func DeleteMessageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	log.Println("🟢：AA")
 
 	// 1. message_attachments
 	if err := tx.Where("message_id = ?", id).Delete(&MessageAttachment{}).Error; err != nil {
@@ -209,28 +193,28 @@ func DeleteMessageHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "message_attachments 削除失敗", http.StatusInternalServerError)
 		return
 	}
-	log.Println("🟢：BB")
+
 	// 2. mentions
 	if err := tx.Where("message_id = ?", id).Delete(&Mention{}).Error; err != nil {
 		tx.Rollback()
 		http.Error(w, "mentions 削除失敗", http.StatusInternalServerError)
 		return
 	}
-	log.Println("🟢：CC")
+
 	// 3. message_reads
 	if err := tx.Where("message_id = ?", id).Delete(&MessageRead{}).Error; err != nil {
 		tx.Rollback()
 		http.Error(w, "message_reads 削除失敗", http.StatusInternalServerError)
 		return
 	}
-	log.Println("🟢：DD")
+
 	// 4. messages(本体)
 	if err := tx.Delete(&Message{}, id).Error; err != nil {
 		tx.Rollback()
 		http.Error(w, "messages 削除失敗", http.StatusInternalServerError)
 		return
 	}
-	log.Println("🟢：EE")
+
 	if err := tx.Commit().Error; err != nil {
 		http.Error(w, "コミット失敗", http.StatusInternalServerError)
 		return
@@ -247,18 +231,7 @@ func DeleteMessageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 送信取消を他のクライアントへブロードキャスト
-	joinBroadcast := map[string]interface{}{
-		"type":      "updateMessage",
-		"messageid": id,
-		"room_id":   reqBody.RoomID,
-		"content":   "（このメッセージは削除されました）",
-	}
-	joinJSON, _ := json.Marshal(joinBroadcast)
-	//log.Println("NNN：", joinJSON)
-
-	broadcast <- joinJSON
-
-	log.Println("🟢DeleteMessageHandler：エンド")
+	BroadcastDeleteMessage(reqBody.RoomID, id)
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("削除成功"))
@@ -266,7 +239,7 @@ func DeleteMessageHandler(w http.ResponseWriter, r *http.Request) {
 
 // メッセージリアクション
 func ReactionHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("🔵ReactionHandler：スタート")
+	log.Println("ReactionHandler：スタート")
 	utils.EnableCORS(w)
 
 	// メソッド確認
@@ -304,83 +277,10 @@ func ReactionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	messageBroadcast := map[string]interface{}{
-		"type":      "reaction",
-		"messageid": req.MessageID,
-		"room_id":   req.RoomID,
-		"user_id":   req.UserID,
-		"reaction":  req.Reaction,
-	}
-	messageJSON, _ := json.Marshal(messageBroadcast)
-
-	broadcast <- messageJSON
+	// リアクションをブロードキャスト
+	BroadcastReaction(req.RoomID, req.UserID, req.MessageID, req.Reaction)
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 	w.Write([]byte("リアクション成功"))
-}
-
-// メンションのためのルームメンバー一覧取得
-func GetRoomMembersHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("🟢GetRoomMembersHandler：スタート")
-	w.Header().Set("Content-Type", "application/json")
-
-	utils.EnableCORS(w)
-
-	// メソッド確認
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-	log.Println("🟢GetRoomMembers メソッド：", r.Method)
-	if r.Method != http.MethodPost {
-		http.Error(w, "メソッドが許可されていません", http.StatusMethodNotAllowed)
-		return
-	}
-
-	roomIDStr := r.URL.Query().Get("room_id")
-	roomID, err := strconv.Atoi(roomIDStr)
-	if err != nil {
-		http.Error(w, "不正なルームIDです", http.StatusBadRequest)
-		return
-	}
-
-	// リクエストボディのパース
-	var req struct {
-		LoginUserID int `json:"login_id"`
-	}
-
-	log.Println("🟢GetRoomMembers ユーザーID：", req.LoginUserID)
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Println("🟢GetRoomMembers JSON：", req)
-		http.Error(w, "JSONの解析に失敗しました", http.StatusBadRequest)
-		return
-	}
-
-	log.Println("🟢GetRoomMembers-1：", req.LoginUserID)
-	type User struct {
-		ID       int    `json:"id"`
-		Username string `json:"username"`
-	}
-
-	var members []User
-
-	err = db.DB.
-		Table("users").
-		Joins("JOIN room_members ON users.id = room_members.user_id").
-		Where("room_members.room_id = ? AND users.id <> ?", roomID, req.LoginUserID).
-		Select("users.id, users.username").
-		Scan(&members).Error
-
-	if err != nil {
-		http.Error(w, "DB error", http.StatusInternalServerError)
-		return
-	}
-	log.Println("🟢GetRoomMembers-2")
-	log.Println("🟢GetRoomMembers：", members)
-
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":  "success",
-		"members": members,
-	})
 }

@@ -15,7 +15,7 @@ func GenerateJWT(username string, passwordHash string) (string, error) {
 	claims := jwt.MapClaims{
 		"username":     username,
 		"passwordHash": passwordHash,
-		"exp":          time.Now().Add(time.Hour * 24).Unix(), // 24時間有効
+		"exp":          time.Now().Add(time.Hour).Unix(), // 1時間有効
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -23,26 +23,26 @@ func GenerateJWT(username string, passwordHash string) (string, error) {
 }
 
 // トークン検証関数　リクエストが来たときに検証　（使ってない）
-func ValidateJWT(tokenString string) (string, string, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, jwt.ErrSignatureInvalid
-		}
-		return jwtSecret, nil
-	})
+// func ValidateJWT(tokenString string) (string, string, error) {
+// 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+// 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+// 			return nil, jwt.ErrSignatureInvalid
+// 		}
+// 		return jwtSecret, nil
+// 	})
 
-	if err != nil {
-		return "", "", err
-	}
+// 	if err != nil {
+// 		return "", "", err
+// 	}
 
-	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-		username, _ := claims["username"].(string)
-		passwordHash, _ := claims["passwordHash"].(string)
-		return username, passwordHash, nil
-	}
+// 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+// 		username, _ := claims["username"].(string)
+// 		passwordHash, _ := claims["passwordHash"].(string)
+// 		return username, passwordHash, nil
+// 	}
 
-	return "", "", jwt.ErrSignatureInvalid
-}
+// 	return "", "", jwt.ErrSignatureInvalid
+// }
 
 // ログイン中のユーザー名を取得するハンドラー
 // func GetLoggedInUserHandler(w http.ResponseWriter, r *http.Request) {

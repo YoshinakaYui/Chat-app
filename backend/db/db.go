@@ -67,7 +67,6 @@ type MessageAttachment struct {
 }
 
 type MessageReads struct {
-	// ID        int       `gorm:"primaryKye"  json:"id"`
 	MessageID int       `gorm:"not null;index" json:"message_id"`
 	UserID    int       `json:"user_id"` // room_idだった
 	Reaction  string    `gorm:"type:varchar" json:"reaction"`
@@ -94,6 +93,19 @@ type DeletedMessage struct {
 	DeletedAt time.Time `json:"deleted_at"`
 }
 
+type UnreadMentionCount struct {
+	UserID         int   `json:"user_id"`
+	RoomID         int   `json:"room_id"`
+	UnreadMentions int64 `json:"unread_mentions"`
+}
+
+// 未読のリアルタイム通知（roomSelect宛）
+type UnreadResult struct {
+	UserID      int `json:"user_id" gorm:"column:user_id"`
+	RoomID      int `json:"room_id" gorm:"column:room_id"`
+	UnreadCount int `json:"unread_count" gorm:"column:unread_count"`
+}
+
 var DB *gorm.DB
 
 // データベース接続
@@ -108,15 +120,8 @@ func Connect() error {
 	return nil
 }
 
-// ハッシュ化パスワードと入力パスワードを比較する関数
-func CheckPasswordHash(password, hash string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
-	return err == nil
-}
-
 // ユーザーを保存
 func SaveUser(username, password string) error {
-	log.Println("db.パスワード：", password)
 	// パスワードをハッシュ化
 	hashedPassword, err := HashPassword(password)
 	if err != nil {
@@ -138,9 +143,15 @@ func HashPassword(password string) (string, error) {
 	return string(hashed), nil
 }
 
+// ハッシュ化パスワードと入力パスワードを比較する関数
+func CheckPasswordHash(password, hash string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	return err == nil
+}
+
 // 全ユーザーを取得する関数
 func GetOtherUsers(loginedUserID int) ([]Users, error) {
-	log.Println("🟡GetOtherUsers")
+	log.Println("GetOtherUsers：スタート")
 	var users []Users
 	result := DB.Table("users").
 		Select("id, username").
@@ -156,21 +167,7 @@ func GetOtherUsers(loginedUserID int) ([]Users, error) {
 
 // 所属個別ルームと未読数を取得
 func GetMyRooms(loginedUserID int) ([]RoomInfo, error) {
-	log.Println("🟡GetOtherUsers：スタート")
-	// var rooms []ChatRoom
-
-	// // GORMクエリ
-	// // room_nameには、相手の名前にして返す!
-	// result := DB.Table("chat_rooms AS cr").
-	// 	Select("cr.id AS id, u.username AS room_name, cr.is_group, cr.created_at, cr.updated_at").
-	// 	Joins("JOIN room_members AS rm1 ON cr.id = rm1.room_id").
-	// 	Joins("JOIN room_members AS rm2 ON cr.id = rm2.room_id AND rm2.user_id <> ?", loginedUserID).
-	// 	Joins("JOIN users AS u ON rm2.user_id = u.id").
-	// 	Where("cr.is_group = 0 AND rm1.user_id = ?", loginedUserID).
-	// 	Group("cr.id, u.username, cr.is_group, cr.created_at, cr.updated_at").
-	// 	Having("COUNT(DISTINCT rm2.user_id) = 1").
-	// 	Order("cr.id ASC").
-	// 	Scan(&rooms).Error
+	log.Println("GetOtherUsers：スタート")
 
 	var rooms []RoomInfo // 結果を格納する構造体
 
@@ -199,7 +196,7 @@ func GetMyRooms(loginedUserID int) ([]RoomInfo, error) {
 
 // 所属グループルームを取得
 func GetMyGroupRooms(userid int) ([]RoomInfo, error) {
-	log.Println("GetMyGroupRooms")
+	log.Println("GetMyGroupRooms：スタート")
 	var rooms []RoomInfo
 
 	// GORMクエリ（unread_count, room_id）
@@ -223,7 +220,6 @@ func GetMyGroupRooms(userid int) ([]RoomInfo, error) {
 	}
 
 	var mentions []MentionCount
-	//log.Println("🟣🟣userid：", userid)
 
 	err1 := DB.Table("mentions AS m").
 		Select("msg.room_id, COUNT(*) AS unread_mention_count").
@@ -246,7 +242,22 @@ func GetMyGroupRooms(userid int) ([]RoomInfo, error) {
 		}
 	}
 
-	//log.Println("マージした結果", rooms)
-	//log.Println("🟣🟣db.mentions：", mentions)
 	return rooms, nil
+}
+
+// user_idからusernameを取得する関数
+func GetUserName(userID int) (string, error) {
+	log.Println("GetUserName：スタート")
+
+	var username string
+	err := DB.
+		Table("users").
+		Select("username").
+		Where("id = ?", userID).
+		Scan(&username).Error
+
+	if err != nil {
+		log.Println("❌ ユーザー名の取得失敗:", err)
+	}
+	return username, nil
 }

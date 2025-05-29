@@ -5,11 +5,13 @@ import (
 	"backend/models"
 	"backend/utils"
 	"encoding/json"
+	"log"
 	"net/http" // HTTPサーバーを作成・操作するライブラリ
 )
 
 // ユーザー登録ハンドラー
 func AddUserHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("AddUserHandler：スタート")
 	utils.EnableCORS(w)
 
 	if r.Method == "OPTIONS" {

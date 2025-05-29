@@ -10,10 +10,9 @@ import (
 	"net/http"
 )
 
-//var wsConnection *websocket.Conn // WebSocket接続をグローバルに保存
-
 // ログイン処理
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("LoginHandler：スタート")
 	utils.EnableCORS(w)
 	if r.Method == "OPTIONS" {
 		w.WriteHeader(http.StatusOK)
@@ -46,9 +45,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Println("ログインID：", user.ID)
-	log.Println(loginReq.Password)
-	log.Println("ハッシュ化：", user.PasswordHash)
+	log.Println("ログインID：", user.ID, "ハッシュ化：", user.PasswordHash)
 
 	// パスワード検証
 	if !db.CheckPasswordHash(loginReq.Password, user.PasswordHash) {
